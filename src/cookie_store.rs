@@ -1,3 +1,6 @@
+use std::fmt::Debug;
+use std::marker::PhantomData;
+use serde::{Deserialize, Serialize};
 use crate::{async_trait, Result, Session, SessionStore};
 
 /// A session store that serializes the entire session into a Cookie.
@@ -19,30 +22,42 @@ use crate::{async_trait, Result, Session, SessionStore};
 /// CookieStore, and noop. Destroying a session must be done at the
 /// cookie setting level, which is outside of the scope of this crate.
 
-#[derive(Debug, Clone, Copy)]
-pub struct CookieStore;
+#[derive(Debug, Copy)]
+pub struct CookieStore<Data> {
+    data: PhantomData<Data>,
+}
 
-impl CookieStore {
+impl<Data> Clone for CookieStore<Data> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone()
+        }
+    }
+}
+
+impl<Data> CookieStore<Data> {
     /// constructs a new CookieStore
     pub fn new() -> Self {
-        Self
+        Self {
+            data: Default::default(),
+        }
     }
 }
 
 #[async_trait]
-impl SessionStore for CookieStore {
-    async fn load_session(&self, cookie_value: String) -> Result<Option<Session>> {
+impl<Data: Debug + Serialize + for<'de> Deserialize<'de> + Send + Sync> SessionStore<Data> for CookieStore<Data> {
+    async fn load_session(&self, cookie_value: String) -> Result<Option<Session<Data>>> {
         let serialized = base64::decode(&cookie_value)?;
-        let session: Session = bincode::deserialize(&serialized)?;
+        let session: Session<Data> = bincode::deserialize(&serialized)?;
         Ok(session.validate())
     }
 
-    async fn store_session(&self, session: Session) -> Result<Option<String>> {
+    async fn store_session(&self, session: Session<Data>) -> Result<Option<String>> {
         let serialized = bincode::serialize(&session)?;
         Ok(Some(base64::encode(serialized)))
     }
 
-    async fn destroy_session(&self, _session: Session) -> Result {
+    async fn destroy_session(&self, _session: Session<Data>) -> Result {
         Ok(())
     }
 

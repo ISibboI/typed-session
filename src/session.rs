@@ -1,15 +1,17 @@
 use chrono::{DateTime, Duration, Utc};
-use rand::RngCore;
+use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
     },
 };
+use rand::distributions::{Alphanumeric, DistString};
 
 /// # The main session type.
+///
+/// `COOKIE_LENGTH` should be a multiple of 32, which is the block-size of blake3.
 ///
 /// ## Cloning and Serialization
 ///
@@ -54,46 +56,48 @@ use std::{
 /// # Ok(()) }) }
 /// ```
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Session {
-    id: String,
+pub struct Session<Data, const COOKIE_LENGTH: usize = 64> {
+    /// Store the id in binary format for efficient use with a database (that supports binary columns/fields).
+    /// We box the id to keep the struct small.
+    id: Box<SessionId>,
     expiry: Option<DateTime<Utc>>,
-    data: Arc<RwLock<HashMap<String, String>>>,
+    data: Arc<RwLock<Data>>,
 
+    /// Store the cookie value that was used to generate the id.
     #[serde(skip)]
-    cookie_value: Option<String>,
+    cookie_value: Arc<String>,
+    /// True if the expiry time has changed or the associated data was borrowed mutably.
     #[serde(skip)]
     data_changed: Arc<AtomicBool>,
+    /// Mark the session for destruction.
     #[serde(skip)]
     destroy: Arc<AtomicBool>,
 }
 
-impl Clone for Session {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SessionId([u8; blake3::OUT_LEN]);
+
+impl<Data> Clone for Session<Data> {
     fn clone(&self) -> Self {
         Self {
-            cookie_value: None,
             id: self.id.clone(),
-            data: self.data.clone(),
             expiry: self.expiry,
-            destroy: self.destroy.clone(),
+            data: self.data.clone(),
+            cookie_value: self.cookie_value.clone(),
             data_changed: self.data_changed.clone(),
+            destroy: self.destroy.clone(),
         }
     }
 }
 
-impl Default for Session {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Generate a random cookie.
+fn generate_cookie<const COOKIE_LENGTH: usize>(rng: &mut impl Rng) -> String {
+    let mut cookie = String::new();
+    Alphanumeric.append_string(rng, &mut cookie, COOKIE_LENGTH);
+    cookie
 }
 
-/// generates a random cookie value
-fn generate_cookie(len: usize) -> String {
-    let mut key = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut key);
-    base64::encode(key)
-}
-
-impl Session {
+impl<Data> Session<Data> {
     /// Create a new session. Generates a random id and matching
     /// cookie value. Does not set an expiry by default
     ///
@@ -101,45 +105,24 @@ impl Session {
     ///
     /// ```rust
     /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new();
+    /// # fn main() -> async_session::Result { use rand::thread_rng;
+    /// # async_std::task::block_on(async {
+    /// let session = Session::new(&mut thread_rng(), ());
     /// assert_eq!(None, session.expiry());
     /// assert!(session.into_cookie_value().is_some());
     /// # Ok(()) }) }
-    pub fn new() -> Self {
-        let cookie_value = generate_cookie(64);
-        let id = Session::id_from_cookie_value(&cookie_value).unwrap();
+    pub fn new(rng: &mut impl Rng, data: Data) -> Self {
+        let cookie_value = generate_cookie(rng);
+        let id = SessionId::from_cookie_value(&cookie_value);
 
         Self {
+            id: Box::new(id),
             data_changed: Arc::new(AtomicBool::new(false)),
             expiry: None,
-            data: Arc::new(RwLock::new(HashMap::default())),
-            cookie_value: Some(cookie_value),
-            id,
+            data: Arc::new(RwLock::new(data)),
+            cookie_value: Arc::new(cookie_value),
             destroy: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-    /// applies a cryptographic hash function on a cookie value
-    /// returned by [`Session::into_cookie_value`] to obtain the
-    /// session id for that cookie. Returns an error if the cookie
-    /// format is not recognized
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new();
-    /// let id = session.id().to_string();
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
-    /// # Ok(()) }) }
-    /// ```
-    pub fn id_from_cookie_value(string: &str) -> Result<String, base64::DecodeError> {
-        let decoded = base64::decode(string)?;
-        let hash = blake3::hash(&decoded);
-        Ok(base64::encode(&hash.as_bytes()))
     }
 
     /// mark this session for destruction. the actual session record
@@ -156,7 +139,7 @@ impl Session {
     /// assert!(session.is_destroyed());
     /// # Ok(()) }) }
     pub fn destroy(&mut self) {
-        self.destroy.store(true, Ordering::Relaxed);
+        self.destroy.store(true, Ordering::SeqCst);
     }
 
     /// returns true if this session is marked for destruction
@@ -173,7 +156,7 @@ impl Session {
     /// # Ok(()) }) }
 
     pub fn is_destroyed(&self) -> bool {
-        self.destroy.load(Ordering::Relaxed)
+        self.destroy.load(Ordering::SeqCst)
     }
 
     /// Gets the session id
@@ -188,7 +171,7 @@ impl Session {
     /// let cookie_value = session.into_cookie_value().unwrap();
     /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
     /// # Ok(()) }) }
-    pub fn id(&self) -> &str {
+    pub fn id(&self) -> &[u8; 32] {
         &self.id
     }
 
@@ -229,7 +212,7 @@ impl Session {
         let mut data = self.data.write().unwrap();
         if data.get(key) != Some(&value) {
             data.insert(key.to_string(), value);
-            self.data_changed.store(true, Ordering::Relaxed);
+            self.data_changed.store(true, Ordering::SeqCst);
         }
     }
 
@@ -280,7 +263,7 @@ impl Session {
     pub fn remove(&mut self, key: &str) {
         let mut data = self.data.write().unwrap();
         if data.remove(key).is_some() {
-            self.data_changed.store(true, Ordering::Relaxed);
+            self.data_changed.store(true, Ordering::SeqCst);
         }
     }
 
@@ -465,7 +448,7 @@ impl Session {
     /// # Ok(()) }) }
     /// ```
     pub fn data_changed(&self) -> bool {
-        self.data_changed.load(Ordering::Relaxed)
+        self.data_changed.load(Ordering::SeqCst)
     }
 
     /// Resets `data_changed` dirty tracking. This is unnecessary for
@@ -489,7 +472,7 @@ impl Session {
     /// # Ok(()) }) }
     /// ```
     pub fn reset_data_changed(&self) {
-        self.data_changed.store(false, Ordering::Relaxed);
+        self.data_changed.store(false, Ordering::SeqCst);
     }
 
     /// Ensures that this session is not expired. Returns None if it is expired
@@ -519,8 +502,9 @@ impl Session {
     ///
     /// ```rust
     /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
+    /// # fn main() -> async_session::Result { use rand::thread_rng;
+    /// # async_std::task::block_on(async {
+    /// let session = Session::new(&mut thread_rng(), ());
     /// session.set_cookie_value("hello".to_owned());
     /// let cookie_value = session.into_cookie_value().unwrap();
     /// assert_eq!(cookie_value, "hello".to_owned());
@@ -531,8 +515,28 @@ impl Session {
     }
 }
 
-impl PartialEq for Session {
-    fn eq(&self, other: &Self) -> bool {
-        other.id == self.id
+impl SessionId {
+    /// applies a cryptographic hash function on a cookie value
+    /// returned by [`Session::into_cookie_value`] to obtain the
+    /// session id for that cookie. Returns an error if the cookie
+    /// format is not recognized
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use async_session::Session;
+    /// # fn main() -> async_session::Result { use rand::thread_rng;
+    /// # async_std::task::block_on(async {
+    /// let session = Session::new(&mut thread_rng(), ());
+    /// let id = session.id().to_string();
+    /// let cookie_value = session.into_cookie_value().unwrap();
+    /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
+    /// # Ok(()) }) }
+    /// ```
+    pub fn from_cookie_value(cookie_value: &str) -> Self {
+        // The original code used base64 encoded binary ids of length of a multiple of the blake3 block size.
+        // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.
+        let hash = blake3::hash(cookie_value.as_bytes());
+        Self(hash.into())
     }
 }

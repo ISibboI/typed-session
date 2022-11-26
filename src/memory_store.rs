@@ -26,18 +26,26 @@ use std::{collections::HashMap, sync::Arc};
 /// - [async-redis-session](https://crates.io/crates/async-redis-session)
 /// - [async-mongodb-session](https://crates.io/crates/async-mongodb-session)
 ///
-#[derive(Debug, Clone)]
-pub struct MemoryStore {
-    inner: Arc<RwLock<HashMap<String, Session>>>,
+#[derive(Debug)]
+pub struct MemoryStore<Data> {
+    session_map: Arc<RwLock<HashMap<[u8; 32], Session<Data>>>>,
+}
+
+impl<Data> Clone for MemoryStore<Data> {
+    fn clone(&self) -> Self {
+        Self {
+            session_map: self.session_map.clone(),
+        }
+    }
 }
 
 #[async_trait]
-impl SessionStore for MemoryStore {
-    async fn load_session(&self, cookie_value: String) -> Result<Option<Session>> {
-        let id = Session::id_from_cookie_value(&cookie_value)?;
-        log::trace!("loading session by id `{}`", id);
+impl<Data: Send + Sync> SessionStore<Data> for MemoryStore<Data> {
+    async fn load_session(&self, cookie_value: String) -> Result<Option<Session<Data>>> {
+        let id = id_from_cookie_value(&cookie_value);
+        log::trace!("loading session by id `{:?}`", id);
         Ok(self
-            .inner
+            .session_map
             .read()
             .await
             .get(&id)
@@ -45,35 +53,35 @@ impl SessionStore for MemoryStore {
             .and_then(Session::validate))
     }
 
-    async fn store_session(&self, session: Session) -> Result<Option<String>> {
+    async fn store_session(&self, session: Session<Data>) -> Result<Option<String>> {
         log::trace!("storing session by id `{}`", session.id());
-        self.inner
+        self.session_map
             .write()
             .await
-            .insert(session.id().to_string(), session.clone());
+            .insert(session.id(), session.clone());
 
         session.reset_data_changed();
         Ok(session.into_cookie_value())
     }
 
-    async fn destroy_session(&self, session: Session) -> Result {
+    async fn destroy_session(&self, session: Session<Data>) -> Result {
         log::trace!("destroying session by id `{}`", session.id());
-        self.inner.write().await.remove(session.id());
+        self.session_map.write().await.remove(session.id());
         Ok(())
     }
 
     async fn clear_store(&self) -> Result {
         log::trace!("clearing memory store");
-        self.inner.write().await.clear();
+        self.session_map.write().await.clear();
         Ok(())
     }
 }
 
-impl MemoryStore {
+impl<Data> MemoryStore<Data> {
     /// Create a new instance of MemoryStore
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            session_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -83,7 +91,7 @@ impl MemoryStore {
     pub async fn cleanup(&self) -> Result {
         log::trace!("cleaning up memory store...");
         let ids_to_delete: Vec<_> = self
-            .inner
+            .session_map
             .read()
             .await
             .values()
@@ -98,7 +106,7 @@ impl MemoryStore {
 
         log::trace!("found {} expired sessions", ids_to_delete.len());
         for id in ids_to_delete {
-            self.inner.write().await.remove(&id);
+            self.session_map.write().await.remove(&id);
         }
         Ok(())
     }
@@ -115,7 +123,7 @@ impl MemoryStore {
     /// # Ok(()) }) }
     /// ```
     pub async fn count(&self) -> usize {
-        let data = self.inner.read().await;
+        let data = self.session_map.read().await;
         data.len()
     }
 }
