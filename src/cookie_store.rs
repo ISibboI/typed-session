@@ -1,7 +1,7 @@
+use crate::{async_trait, Result, Session, SessionStore};
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use serde::{Deserialize, Serialize};
-use crate::{async_trait, Result, Session, SessionStore};
 
 /// A session store that serializes the entire session into a Cookie.
 ///
@@ -30,7 +30,7 @@ pub struct CookieStore<Data> {
 impl<Data> Clone for CookieStore<Data> {
     fn clone(&self) -> Self {
         Self {
-            data: self.data.clone()
+            data: self.data.clone(),
         }
     }
 }
@@ -45,7 +45,9 @@ impl<Data> CookieStore<Data> {
 }
 
 #[async_trait]
-impl<Data: Debug + Serialize + for<'de> Deserialize<'de> + Send + Sync> SessionStore<Data> for CookieStore<Data> {
+impl<Data: Debug + Serialize + for<'de> Deserialize<'de> + Send + Sync> SessionStore<Data>
+    for CookieStore<Data>
+{
     async fn load_session(&self, cookie_value: String) -> Result<Option<Session<Data>>> {
         let serialized = base64::decode(&cookie_value)?;
         let session: Session<Data> = bincode::deserialize(&serialized)?;

@@ -1,13 +1,14 @@
 use chrono::{DateTime, Duration, Utc};
+use rand::distributions::{Alphanumeric, DistString};
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
+    mem,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
     },
 };
-use rand::distributions::{Alphanumeric, DistString};
 
 /// # The main session type.
 ///
@@ -30,65 +31,60 @@ use rand::distributions::{Alphanumeric, DistString};
 /// ```rust
 /// # use async_session::Session;
 /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-/// let mut session = Session::new();
+/// let mut session = Session::new(15);
 /// assert!(!session.data_changed());
 ///
-/// session.insert("key", 1)?;
+/// *session.data_mut() = 12;
 /// assert!(session.data_changed());
 ///
-/// session.reset_data_changed();
-/// assert_eq!(session.get::<usize>("key").unwrap(), 1);
+/// let mut session = Session::new(15);
+/// assert_eq!(*session.data(), 15);
 /// assert!(!session.data_changed());
 ///
-/// session.insert("key", 2)?;
-/// assert!(session.data_changed());
-/// assert_eq!(session.get::<usize>("key").unwrap(), 2);
-///
-/// session.insert("key", 1)?;
-/// assert!(session.data_changed(), "reverting the data still counts as a change");
-///
-/// session.reset_data_changed();
-/// assert!(!session.data_changed());
-/// session.remove("nonexistent key");
-/// assert!(!session.data_changed());
-/// session.remove("key");
-/// assert!(session.data_changed());
+/// session.data_mut();
+/// assert!(session.data_changed(), "Accessing the data mutably counts as change already");
+/// assert_eq!(*session.data(), 15);
 /// # Ok(()) }) }
 /// ```
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Session<Data, const COOKIE_LENGTH: usize = 64> {
-    /// Store the id in binary format for efficient use with a database (that supports binary columns/fields).
-    /// We box the id to keep the struct small.
-    id: Box<SessionId>,
-    expiry: Option<DateTime<Utc>>,
-    data: Arc<RwLock<Data>>,
-
-    /// Store the cookie value that was used to generate the id.
-    #[serde(skip)]
-    cookie_value: Arc<String>,
-    /// True if the expiry time has changed or the associated data was borrowed mutably.
-    #[serde(skip)]
-    data_changed: Arc<AtomicBool>,
-    /// Mark the session for destruction.
-    #[serde(skip)]
-    destroy: Arc<AtomicBool>,
+    state: SessionState<Data>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SessionId([u8; blake3::OUT_LEN]);
-
-impl<Data> Clone for Session<Data> {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id.clone(),
-            expiry: self.expiry,
-            data: self.data.clone(),
-            cookie_value: self.cookie_value.clone(),
-            data_changed: self.data_changed.clone(),
-            destroy: self.destroy.clone(),
-        }
-    }
+#[derive(Debug, Clone)]
+pub(crate) enum SessionState<Data> {
+    /// The session was newly generated for this request.
+    New {
+        expiry: Option<DateTime<Utc>>,
+        data: Data,
+    },
+    /// The session was loaded from the session store, and was not changed.
+    Unchanged {
+        id: Box<SessionId>,
+        expiry: Option<DateTime<Utc>>,
+        data: Data,
+    },
+    /// The session was loaded from the session store, and was changed.
+    /// Either the expiry datetime or the data have changed.
+    Changed {
+        old_id: Box<SessionId>,
+        expiry: Option<DateTime<Utc>>,
+        data: Data,
+    },
+    /// The session was marked for deletion.
+    Deleted { old_id: Box<SessionId> },
+    /// The session was marked for deletion before it was ever communicated to database or client.
+    NewDeleted,
+    /// Used internally to avoid unsafe code when replacing the session state through a mutable reference.
+    Invalid,
 }
+
+/// The type of a session id.
+pub type SessionIdType = [u8; blake3::OUT_LEN];
+
+/// A session id.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionId(SessionIdType);
 
 /// Generate a random cookie.
 fn generate_cookie<const COOKIE_LENGTH: usize>(rng: &mut impl Rng) -> String {
@@ -97,32 +93,83 @@ fn generate_cookie<const COOKIE_LENGTH: usize>(rng: &mut impl Rng) -> String {
     cookie
 }
 
-impl<Data> Session<Data> {
-    /// Create a new session. Generates a random id and matching
-    /// cookie value. Does not set an expiry by default
+impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
+    /// Create a new session. Does not set an expiry by default.
+    /// The session id is generated once the session is stored in the session store.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { use rand::thread_rng;
-    /// # async_std::task::block_on(async {
-    /// let session = Session::new(&mut thread_rng(), ());
+    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// let session = Session::new(());
     /// assert_eq!(None, session.expiry());
-    /// assert!(session.into_cookie_value().is_some());
     /// # Ok(()) }) }
-    pub fn new(rng: &mut impl Rng, data: Data) -> Self {
-        let cookie_value = generate_cookie(rng);
-        let id = SessionId::from_cookie_value(&cookie_value);
-
+    pub fn new(data: Data) -> Self {
         Self {
-            id: Box::new(id),
-            data_changed: Arc::new(AtomicBool::new(false)),
-            expiry: None,
-            data: Arc::new(RwLock::new(data)),
-            cookie_value: Arc::new(cookie_value),
-            destroy: Arc::new(AtomicBool::new(false)),
+            state: SessionState::new(data),
         }
+    }
+
+    /// **This method should only be called by a session store!**
+    ///
+    /// Create a session instance from parts loaded by a session store.
+    /// The session state will be `Unchanged`.
+    pub fn new_from_session_store(
+        id: SessionId,
+        expiry: Option<DateTime<Utc>>,
+        data: Data,
+    ) -> Self {
+        Self {
+            state: SessionState::new_from_session_store(id, expiry, data),
+        }
+    }
+
+    /// Returns the expiry timestamp of this session, if there is one.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use async_session::Session;
+    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// let mut session = Session::new(());
+    /// assert_eq!(None, session.expiry());
+    /// session.expire_in(std::time::Duration::from_secs(1));
+    /// assert!(session.expiry().is_some());
+    /// # Ok(()) }) }
+    /// ```
+    pub fn expiry(&self) -> Option<&DateTime<Utc>> {
+        self.state.expiry()
+    }
+
+    pub fn data(&self) -> &Data {
+        self.state.data()
+    }
+
+    /// Returns a mutable reference to the data associated with this session,
+    /// and marks the session as changed.
+    ///
+    /// Note that the session gets marked as changed, even if the returned reference is never written to.
+    ///
+    /// **Panics** if the session was marked for deletion before.
+    pub fn data_mut(&mut self) -> &mut Data {
+        self.state.data_mut()
+    }
+
+    /// Returns true if this session is marked for destruction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use async_session::Session;
+    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// let mut session = Session::new(());
+    /// assert!(!session.is_deleted());
+    /// session.delete();
+    /// assert!(session.is_deleted());
+    /// # Ok(()) }) }
+    pub fn is_deleted(&self) -> bool {
+        self.state.is_deleted()
     }
 
     /// mark this session for destruction. the actual session record
@@ -133,252 +180,75 @@ impl<Data> Session<Data> {
     /// ```rust
     /// # use async_session::Session;
     /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// assert!(!session.is_destroyed());
-    /// session.destroy();
-    /// assert!(session.is_destroyed());
+    /// let mut session = Session::new(());
+    /// assert!(!session.is_deleted());
+    /// session.delete();
+    /// assert!(session.is_deleted());
     /// # Ok(()) }) }
-    pub fn destroy(&mut self) {
-        self.destroy.store(true, Ordering::SeqCst);
+    pub fn delete(&mut self) {
+        self.state.delete();
     }
 
-    /// returns true if this session is marked for destruction
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// assert!(!session.is_destroyed());
-    /// session.destroy();
-    /// assert!(session.is_destroyed());
-    /// # Ok(()) }) }
-
-    pub fn is_destroyed(&self) -> bool {
-        self.destroy.load(Ordering::SeqCst)
-    }
-
-    /// Gets the session id
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new();
-    /// let id = session.id().to_owned();
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
-    /// # Ok(()) }) }
-    pub fn id(&self) -> &[u8; 32] {
-        &self.id
-    }
-
-    /// inserts a serializable value into the session hashmap. returns
-    /// an error if the serialization was unsuccessful.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use serde::{Serialize, Deserialize};
-    /// # use async_session::Session;
-    /// #[derive(Serialize, Deserialize)]
-    /// struct User {
-    ///     name: String,
-    ///     legs: u8
-    /// }
-    /// let mut session = Session::new();
-    /// session.insert("user", User { name: "chashu".into(), legs: 4 }).expect("serializable");
-    /// assert_eq!(r#"{"name":"chashu","legs":4}"#, session.get_raw("user").unwrap());
-    /// ```
-    pub fn insert(&mut self, key: &str, value: impl Serialize) -> Result<(), serde_json::Error> {
-        self.insert_raw(key, serde_json::to_string(&value)?);
-        Ok(())
-    }
-
-    /// inserts a string into the session hashmap
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// let mut session = Session::new();
-    /// session.insert_raw("ten", "10".to_string());
-    /// let ten: usize = session.get("ten").unwrap();
-    /// assert_eq!(ten, 10);
-    /// ```
-    pub fn insert_raw(&mut self, key: &str, value: String) {
-        let mut data = self.data.write().unwrap();
-        if data.get(key) != Some(&value) {
-            data.insert(key.to_string(), value);
-            self.data_changed.store(true, Ordering::SeqCst);
-        }
-    }
-
-    /// deserializes a type T out of the session hashmap
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// let mut session = Session::new();
-    /// session.insert("key", vec![1, 2, 3]);
-    /// let numbers: Vec<usize> = session.get("key").unwrap();
-    /// assert_eq!(vec![1, 2, 3], numbers);
-    /// ```
-    pub fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
-        let data = self.data.read().unwrap();
-        let string = data.get(key)?;
-        serde_json::from_str(string).ok()
-    }
-
-    /// returns the String value contained in the session hashmap
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// let mut session = Session::new();
-    /// session.insert("key", vec![1, 2, 3]);
-    /// assert_eq!("[1,2,3]", session.get_raw("key").unwrap());
-    /// ```
-    pub fn get_raw(&self, key: &str) -> Option<String> {
-        let data = self.data.read().unwrap();
-        data.get(key).cloned()
-    }
-
-    /// removes an entry from the session hashmap
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// let mut session = Session::new();
-    /// session.insert("key", "value");
-    /// session.remove("key");
-    /// assert!(session.get_raw("key").is_none());
-    /// assert_eq!(session.len(), 0);
-    /// ```
-    pub fn remove(&mut self, key: &str) {
-        let mut data = self.data.write().unwrap();
-        if data.remove(key).is_some() {
-            self.data_changed.store(true, Ordering::SeqCst);
-        }
-    }
-
-    /// returns the number of elements in the session hashmap
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// let mut session = Session::new();
-    /// assert_eq!(session.len(), 0);
-    /// session.insert("key", 0);
-    /// assert_eq!(session.len(), 1);
-    /// ```
-    pub fn len(&self) -> usize {
-        let data = self.data.read().unwrap();
-        data.len()
-    }
-
-    /// Generates a new id and cookie for this session
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// let old_id = session.id().to_string();
-    /// session.regenerate();
-    /// assert!(session.id() != &old_id);
-    /// let new_id = session.id().to_string();
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(new_id, Session::id_from_cookie_value(&cookie_value)?);
-    /// # Ok(()) }) }
-    /// ```
+    /// Generates a new id and cookie for this session.
     pub fn regenerate(&mut self) {
-        let cookie_value = generate_cookie(64);
-        self.id = Session::id_from_cookie_value(&cookie_value).unwrap();
-        self.cookie_value = Some(cookie_value);
+        self.data_mut();
     }
 
-    /// sets the cookie value that this session will use to serialize
-    /// itself. this should only be called by cookie stores. any other
-    /// uses of this method will result in the cookie not getting
-    /// correctly deserialized on subsequent requests.
+    /// Updates the expiry timestamp of this session.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use async_session::Session;
     /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// session.set_cookie_value("hello".to_owned());
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(cookie_value, "hello".to_owned());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn set_cookie_value(&mut self, cookie_value: String) {
-        self.cookie_value = Some(cookie_value)
-    }
-
-    /// returns the expiry timestamp of this session, if there is one
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// assert_eq!(None, session.expiry());
-    /// session.expire_in(std::time::Duration::from_secs(1));
-    /// assert!(session.expiry().is_some());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn expiry(&self) -> Option<&DateTime<Utc>> {
-        self.expiry.as_ref()
-    }
-
-    /// assigns an expiry timestamp to this session
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
+    /// let mut session = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
     /// assert!(session.expiry().is_some());
     /// # Ok(()) }) }
     /// ```
     pub fn set_expiry(&mut self, expiry: DateTime<Utc>) {
-        self.expiry = Some(expiry);
+        *self.state.expiry_mut() = Some(expiry);
     }
 
-    /// assigns the expiry timestamp to a duration from the current time.
+    /// Sets this session to never expire.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use async_session::Session;
     /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
+    /// let mut session = Session::new(());
+    /// assert_eq!(None, session.expiry());
+    /// session.set_expiry(chrono::Utc::now());
+    /// assert!(session.expiry().is_some());
+    /// session.do_not_expire();
+    /// assert!(session.expiry().is_none());
+    /// # Ok(()) }) }
+    /// ```
+    pub fn do_not_expire(&mut self) {
+        *self.state.expiry_mut() = None;
+    }
+
+    /// Sets this session to expire `ttl` time into the future.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use async_session::Session;
+    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// let mut session = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.expire_in(std::time::Duration::from_secs(1));
     /// assert!(session.expiry().is_some());
     /// # Ok(()) }) }
     /// ```
     pub fn expire_in(&mut self, ttl: std::time::Duration) {
-        self.expiry = Some(Utc::now() + Duration::from_std(ttl).unwrap());
+        *self.state.expiry_mut() = Some(Utc::now() + Duration::from_std(ttl).unwrap());
     }
 
-    /// predicate function to determine if this session is
-    /// expired. returns false if there is no expiry set, or if it is
-    /// in the past.
+    /// Return true if the session is expired.
+    /// The session is expired if it has an expiry timestamp that is in the future.
     ///
     /// # Example
     ///
@@ -387,7 +257,7 @@ impl<Data> Session<Data> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
+    /// let mut session = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// assert!(!session.is_expired());
     /// session.expire_in(Duration::from_secs(1));
@@ -397,13 +267,14 @@ impl<Data> Session<Data> {
     /// # Ok(()) }) }
     /// ```
     pub fn is_expired(&self) -> bool {
-        match self.expiry {
-            Some(expiry) => expiry < Utc::now(),
+        match self.state.expiry() {
+            Some(expiry) => *expiry < Utc::now(),
             None => false,
         }
     }
 
-    /// Ensures that this session is not expired. Returns None if it is expired
+    /// Returns the duration from now to the expiry time of this session.
+    /// Returns `None` if it is expired.
     ///
     /// # Example
     ///
@@ -412,106 +283,129 @@ impl<Data> Session<Data> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new();
-    /// let mut session = session.validate().unwrap();
-    /// session.expire_in(Duration::from_secs(1));
-    /// let session = session.validate().unwrap();
-    /// task::sleep(Duration::from_secs(2)).await;
-    /// assert_eq!(None, session.validate());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn validate(self) -> Option<Self> {
-        if self.is_expired() {
-            None
-        } else {
-            Some(self)
-        }
-    }
-
-    /// Checks if the data has been modified. This is based on the
-    /// implementation of [`PartialEq`] for the inner data type.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// assert!(!session.data_changed(), "new session is not changed");
-    /// session.insert("key", 1);
-    /// assert!(session.data_changed());
-    ///
-    /// session.reset_data_changed();
-    /// assert!(!session.data_changed());
-    /// session.remove("key");
-    /// assert!(session.data_changed());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn data_changed(&self) -> bool {
-        self.data_changed.load(Ordering::SeqCst)
-    }
-
-    /// Resets `data_changed` dirty tracking. This is unnecessary for
-    /// any session store that serializes the data to a string on
-    /// storage.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
-    /// assert!(!session.data_changed(), "new session is not changed");
-    /// session.insert("key", 1);
-    /// assert!(session.data_changed());
-    ///
-    /// session.reset_data_changed();
-    /// assert!(!session.data_changed());
-    /// session.remove("key");
-    /// assert!(session.data_changed());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn reset_data_changed(&self) {
-        self.data_changed.store(false, Ordering::SeqCst);
-    }
-
-    /// Ensures that this session is not expired. Returns None if it is expired
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # use std::time::Duration;
-    /// # use async_std::task;
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new();
+    /// let mut session = Session::new(());
     /// session.expire_in(Duration::from_secs(123));
     /// let expires_in = session.expires_in().unwrap();
     /// assert!(123 - expires_in.as_secs() < 2);
     /// # Ok(()) }) }
     /// ```
-    /// Duration from now to the expiry time of this session
     pub fn expires_in(&self) -> Option<std::time::Duration> {
-        self.expiry?.signed_duration_since(Utc::now()).to_std().ok()
+        let duration = self.state.expiry()?.signed_duration_since(Utc::now());
+        if duration > Duration::zero() {
+            Some(duration.to_std().unwrap())
+        } else {
+            None
+        }
+    }
+}
+
+impl<Data> SessionState<Data> {
+    fn new(data: Data) -> Self {
+        Self::New { expiry: None, data }
     }
 
-    /// takes the cookie value and consume this session.
-    /// this is generally only performed by the session store
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { use rand::thread_rng;
-    /// # async_std::task::block_on(async {
-    /// let session = Session::new(&mut thread_rng(), ());
-    /// session.set_cookie_value("hello".to_owned());
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(cookie_value, "hello".to_owned());
-    /// # Ok(()) }) }
-    /// ```
-    pub fn into_cookie_value(mut self) -> Option<String> {
-        self.cookie_value.take()
+    fn new_from_session_store(id: SessionId, expiry: Option<DateTime<Utc>>, data: Data) -> Self {
+        Self::Unchanged {
+            id: Box::new(id),
+            expiry,
+            data,
+        }
+    }
+
+    fn expiry(&self) -> Option<&DateTime<Utc>> {
+        match self {
+            Self::New { expiry, .. }
+            | Self::Unchanged { expiry, .. }
+            | Self::Changed { expiry, .. } => expiry.as_ref(),
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to retrieve the expiry of a purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn expiry_mut(&mut self) -> &mut Option<DateTime<Utc>> {
+        self.change();
+
+        match self {
+            Self::New { expiry, .. }
+            | Self::Unchanged { expiry, .. }
+            | Self::Changed { expiry, .. } => expiry,
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to retrieve the expiry of a purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn data(&self) -> &Data {
+        match self {
+            Self::New { data, .. } | Self::Unchanged { data, .. } | Self::Changed { data, .. } => {
+                data
+            }
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to retrieve the data of a purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn data_mut(&mut self) -> &mut Data {
+        self.change();
+
+        match self {
+            Self::New { data, .. } | Self::Unchanged { data, .. } | Self::Changed { data, .. } => {
+                data
+            }
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to retrieve the data of a purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn is_deleted(&self) -> bool {
+        matches!(self, Self::Deleted { .. } | Self::NewDeleted)
+    }
+
+    fn change(&mut self) {
+        match self {
+            Self::New { .. } => { /* New implies changed, as new sessions anyways need to be communicated to client and database. */
+            }
+            Self::Unchanged { .. } => {
+                let Self::Unchanged { id, expiry, data } = mem::replace(self, Self::Invalid); // else {unreachable!()};
+                *self = Self::Changed {
+                    old_id: id,
+                    expiry,
+                    data,
+                };
+            }
+            Self::Changed { .. } => { /* Already changed. */ }
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to change purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn delete(&mut self) {
+        match self {
+            Self::New { .. } => {
+                *self = Self::NewDeleted;
+            }
+            Self::Unchanged { .. } => {
+                let Self::Unchanged { id, .. } = mem::replace(self, Self::Invalid);
+                *self = Self::Deleted { old_id: id };
+            }
+            Self::Changed { .. } => {
+                let Self::Changed { old_id, .. } = mem::replace(self, Self::Invalid);
+                *self = Self::Deleted { old_id };
+            }
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to purge a purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
     }
 }
 
@@ -525,9 +419,8 @@ impl SessionId {
     ///
     /// ```rust
     /// # use async_session::Session;
-    /// # fn main() -> async_session::Result { use rand::thread_rng;
-    /// # async_std::task::block_on(async {
-    /// let session = Session::new(&mut thread_rng(), ());
+    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// let session = Session::new(());
     /// let id = session.id().to_string();
     /// let cookie_value = session.into_cookie_value().unwrap();
     /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
@@ -538,5 +431,11 @@ impl SessionId {
         // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.
         let hash = blake3::hash(cookie_value.as_bytes());
         Self(hash.into())
+    }
+}
+
+impl From<SessionId> for SessionIdType {
+    fn from(id: SessionId) -> Self {
+        id.0
     }
 }
