@@ -114,8 +114,8 @@ impl<Data> MemoryStore<Data> {
     /// returns the number of elements in the memory store
     /// # Example
     /// ```rust
-    /// # use async_session::{MemoryStore, Session, SessionStore};
-    /// # fn main() -> async_session::Result { async_std::task::block_on(async {
+    /// # use typed_session::{MemoryStore, Session, SessionStore};
+    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
     /// let mut store = MemoryStore::new();
     /// assert_eq!(store.count().await, 0);
     /// store.store_session(Session::new()).await?;

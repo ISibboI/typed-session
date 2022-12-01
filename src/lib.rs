@@ -8,9 +8,9 @@
 //! # Example
 //!
 //! ```
-//! use async_session::{Session, SessionStore, MemoryStore};
+//! use typed_session::{Session, SessionStore, MemoryStore};
 //!
-//! # fn main() -> async_session::Result {
+//! # fn main() -> typed_session::Result {
 //! # async_std::task::block_on(async {
 //! #
 //! // Init a new session store we can persist sessions to.
@@ -52,17 +52,13 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 mod session;
 mod session_store;
 
-pub use cookie_store::CookieStore;
-pub use memory_store::MemoryStore;
-pub use session::Session;
-pub use session_store::SessionStore;
+//pub use cookie_store::CookieStore;
+//pub use memory_store::MemoryStore;
+pub use session::{Session, SessionId, SessionIdType};
+pub use session_store::{SessionStore, SessionStoreImplementation, SetSessionCookieCommand};
 
 pub use async_trait::async_trait;
-pub use base64;
 pub use blake3;
 pub use chrono;
-pub use hmac;
 pub use log;
 pub use serde;
-pub use serde_json;
-pub use sha2;
