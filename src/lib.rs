@@ -17,12 +17,9 @@
 //! let mut store = MemoryStore::new();
 //!
 //! // Create a new session.
-//! let mut session = Session::new();
-//! session.insert("user_id", 1)?;
-//! assert!(session.data_changed());
+//! let mut session = Session::new(15);
 //!
-//! // retrieve the cookie value to store in a session cookie
-//! let cookie_value = store.store_session(session).await?.unwrap();
+//! todo!()
 //!
 //! // Retrieve the session using the cookie.
 //! let session = store.load_session(cookie_value).await?.unwrap();
@@ -50,8 +47,8 @@ pub use anyhow::Error;
 /// An anyhow::Result with default return type of ()
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
-mod cookie_store;
-mod memory_store;
+//mod cookie_store;
+//mod memory_store;
 mod session;
 mod session_store;
 

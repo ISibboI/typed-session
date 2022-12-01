@@ -10,24 +10,9 @@ use std::{
     },
 };
 
-/// # The main session type.
-///
 /// `COOKIE_LENGTH` should be a multiple of 32, which is the block-size of blake3.
 ///
-/// ## Cloning and Serialization
-///
-/// The `cookie_value` field is not cloned or serialized, and it can
-/// only be read through `into_cookie_value`. The intent of this field
-/// is that it is set either by initialization or by a session store,
-/// and read exactly once in order to set the cookie value.
-///
-/// ## Change tracking session tracks whether any of its inner data
-/// was changed since it was last serialized. Any session store that
-/// does not undergo a serialization-deserialization cycle must call
-/// [`Session::reset_data_changed`] in order to reset the change tracker on
-/// an individual record.
-///
-/// ### Change tracking example
+/// # Change tracking example
 /// ```rust
 /// # use async_session::Session;
 /// # fn main() -> async_session::Result { async_std::task::block_on(async {
@@ -72,7 +57,7 @@ pub(crate) enum SessionState<Data> {
         data: Data,
     },
     /// The session was marked for deletion.
-    Deleted { old_id: Box<SessionId> },
+    Deleted { id: Box<SessionId> },
     /// The session was marked for deletion before it was ever communicated to database or client.
     NewDeleted,
     /// Used internally to avoid unsafe code when replacing the session state through a mutable reference.
@@ -83,7 +68,7 @@ pub(crate) enum SessionState<Data> {
 pub type SessionIdType = [u8; blake3::OUT_LEN];
 
 /// A session id.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SessionId(SessionIdType);
 
 /// Generate a random cookie.
@@ -395,11 +380,11 @@ impl<Data> SessionState<Data> {
             }
             Self::Unchanged { .. } => {
                 let Self::Unchanged { id, .. } = mem::replace(self, Self::Invalid);
-                *self = Self::Deleted { old_id: id };
+                *self = Self::Deleted { id: id };
             }
             Self::Changed { .. } => {
                 let Self::Changed { old_id, .. } = mem::replace(self, Self::Invalid);
-                *self = Self::Deleted { old_id };
+                *self = Self::Deleted { id: old_id };
             }
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to purge a purged session {self:?}")
@@ -410,7 +395,7 @@ impl<Data> SessionState<Data> {
 }
 
 impl SessionId {
-    /// applies a cryptographic hash function on a cookie value
+    /// Applies a cryptographic hash function on a cookie value
     /// returned by [`Session::into_cookie_value`] to obtain the
     /// session id for that cookie. Returns an error if the cookie
     /// format is not recognized
