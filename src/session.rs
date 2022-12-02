@@ -59,10 +59,10 @@ pub(crate) enum SessionState<Data> {
 pub type SessionIdType = [u8; blake3::OUT_LEN];
 
 /// A session id.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
-impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
+impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
     /// Create a new session. Does not set an expiry by default.
     /// The session id is generated once the session is stored in the session store.
     ///
@@ -94,6 +94,24 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
         }
     }
 
+    /// Returns true if this session is marked for destruction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use typed_session::Session;
+    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// let mut session = Session::new(());
+    /// assert!(!session.is_deleted());
+    /// session.delete();
+    /// assert!(session.is_deleted());
+    /// # Ok(()) }) }
+    pub fn is_deleted(&self) -> bool {
+        self.state.is_deleted()
+    }
+}
+
+impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// Returns the expiry timestamp of this session, if there is one.
     ///
     /// # Example
@@ -127,22 +145,6 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
         self.state.data_mut()
     }
 
-    /// Returns true if this session is marked for destruction.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
-    /// assert!(!session.is_deleted());
-    /// session.delete();
-    /// assert!(session.is_deleted());
-    /// # Ok(()) }) }
-    pub fn is_deleted(&self) -> bool {
-        self.state.is_deleted()
-    }
-
     /// mark this session for destruction. the actual session record
     /// is not destroyed until the end of this response cycle.
     ///
@@ -162,7 +164,8 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
 
     /// Generates a new id and cookie for this session.
     pub fn regenerate(&mut self) {
-        self.data_mut();
+        // Calling this marks the state as changed.
+        self.state.data_mut();
     }
 
     /// Updates the expiry timestamp of this session.
@@ -270,7 +273,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     }
 }
 
-impl<Data: Debug> SessionState<Data> {
+impl<Data> SessionState<Data> {
     fn new(data: Data) -> Self {
         Self::New { expiry: None, data }
     }
@@ -279,6 +282,12 @@ impl<Data: Debug> SessionState<Data> {
         Self::Unchanged { id, expiry, data }
     }
 
+    fn is_deleted(&self) -> bool {
+        matches!(self, Self::Deleted { .. } | Self::NewDeleted)
+    }
+}
+
+impl<Data: Debug> SessionState<Data> {
     fn expiry(&self) -> Option<&DateTime<Utc>> {
         match self {
             Self::New { expiry, .. }
@@ -329,10 +338,6 @@ impl<Data: Debug> SessionState<Data> {
             }
             Self::Invalid => unreachable!("Invalid state is used internally only"),
         }
-    }
-
-    fn is_deleted(&self) -> bool {
-        matches!(self, Self::Deleted { .. } | Self::NewDeleted)
     }
 
     fn change(&mut self) {

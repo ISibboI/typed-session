@@ -56,7 +56,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     /// If the session cookie requires to be updated, because the session data or expiry changed,
     /// then a [SetSessionCookieCommand] is returned.
     pub async fn store_session(
-        &self,
+        &mut self,
         session: Session<Data>,
         rng: &mut impl Rng,
     ) -> Result<Option<SetSessionCookieCommand>> {
@@ -91,7 +91,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     }
 
     async fn try_store_session(
-        &self,
+        &mut self,
         session: &Session<Data>,
         rng: &mut impl Rng,
     ) -> Result<WriteSessionResult<Option<SetSessionCookieCommand>>> {
@@ -138,8 +138,8 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     }
 
     /// Empties the entire store, deleting all sessions.
-    pub async fn clear_store(&self) -> Result {
-        todo!()
+    pub async fn clear_store(&mut self) -> Result {
+        self.implementation.clear().await
     }
 }
 
@@ -158,7 +158,7 @@ pub trait SessionStoreImplementation<Data> {
 
     /// Create a session with the given `id`, `expiry` and `data`.
     async fn create_session(
-        &self,
+        &mut self,
         id: &SessionId,
         expiry: &Option<DateTime<Utc>>,
         data: &Data,
@@ -169,7 +169,7 @@ pub trait SessionStoreImplementation<Data> {
 
     /// Update the session with id `old_id`, replacing `old_id` with `new_id` and updating `expiry` and `data`.
     async fn update_session(
-        &self,
+        &mut self,
         old_id: &SessionId,
         new_id: &SessionId,
         expiry: &Option<DateTime<Utc>>,
@@ -177,7 +177,10 @@ pub trait SessionStoreImplementation<Data> {
     ) -> Result<WriteSessionResult>;
 
     /// Delete the session with the given `id`.
-    async fn delete_session(&self, id: &SessionId) -> Result<()>;
+    async fn delete_session(&mut self, id: &SessionId) -> Result<()>;
+
+    /// Delete all sessions in the store.
+    async fn clear(&mut self) -> Result<()>;
 }
 
 /// The result of writing a session, indicating if the session could be written, or if the id collided.

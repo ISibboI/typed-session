@@ -5,26 +5,45 @@
 //! interface that can be used to encode and store sessions, and
 //! decode and load sessions generating cookies in the process.
 //!
+//! # Change tracking
+//!
+//! Changes are tracked automatically.
+//! Whenever the data or expiry of a session is accessed mutably, the session is marked as changed.
+//! The session store only forwards updates to its implementation when a change has happened.
+//! Further, the session store is responsible for deciding whether the session cookie should be
+//! renewed, hence its functions return an `Option<`[`SetSessionCookieCommand`]`>` where applicable.
+//!
+//! # Security
+//!
+//! TODO
+//!
 //! # Example
 //!
 //! ```
 //! use typed_session::{Session, SessionStore, MemoryStore};
 //!
 //! # fn main() -> typed_session::Result {
+//! # use rand::thread_rng;
 //! # async_std::task::block_on(async {
 //! #
+//! // Make sure to use a cryptographically secure random generator.
+//! // According to the docs of the rand crate, thread_rng() is secure.
+//! let mut rng = thread_rng();
+//!
 //! // Init a new session store we can persist sessions to.
-//! let mut store = MemoryStore::new();
+//! let mut store: SessionStore<_, _> = SessionStore::new(MemoryStore::new());
 //!
-//! // Create a new session.
-//! let mut session = Session::new(15);
-//!
-//! todo!()
+//! // Create and store a new session.
+//! // The session can hold arbitrary data, but session stores are type safe,
+//! // i.e. all sessions must hold data of the same type.
+//! // Use e.g. an enum to distinguish session states like anonymous or logged-in as user X.
+//! let session = Session::new(15);
+//! let set_cookie_command = store.store_session(session, &mut rng).await?.unwrap();
+//! // The set_cookie_command contains the cookie value and the expiry to be sent to the client.
 //!
 //! // Retrieve the session using the cookie.
-//! let session = store.load_session(cookie_value).await?.unwrap();
-//! assert_eq!(session.get::<usize>("user_id").unwrap(), 1);
-//! assert!(!session.data_changed());
+//! let session = store.load_session(set_cookie_command.cookie_value).await?.unwrap();
+//! assert_eq!(*session.data(), 15);
 //! #
 //! # Ok(()) }) }
 //! ```
@@ -48,12 +67,12 @@ pub use anyhow::Error;
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
 //mod cookie_store;
-//mod memory_store;
+mod memory_store;
 mod session;
 mod session_store;
 
 //pub use cookie_store::CookieStore;
-//pub use memory_store::MemoryStore;
+pub use memory_store::MemoryStore;
 pub use session::{Session, SessionId, SessionIdType};
 pub use session_store::{SessionStore, SessionStoreImplementation, SetSessionCookieCommand};
 
