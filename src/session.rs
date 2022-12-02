@@ -9,18 +9,6 @@ use std::mem;
 /// Instead, it should be passed to [SessionStore::store_session](crate::session_store::SessionStore::store_session).
 ///
 /// `COOKIE_LENGTH` should be a multiple of 32, which is the block-size of blake3.
-///
-/// # Change tracking example
-/// ```rust
-/// # use typed_session::{Session, MemoryStore};
-/// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-/// let mut session_store = MemoryStore::new();
-/// let session = Session::new(15);
-/// session_store.store_session(session);
-///
-/// let mut session = session_store.load_session();
-/// # Ok(()) }) }
-/// ```
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct Session<Data, const COOKIE_LENGTH: usize = 64> {
@@ -71,7 +59,7 @@ impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new(());
+    /// let session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// # Ok(()) }) }
     pub fn new(data: Data) -> Self {
@@ -101,7 +89,7 @@ impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert!(!session.is_deleted());
     /// session.delete();
     /// assert!(session.is_deleted());
@@ -119,7 +107,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.expire_in(std::time::Duration::from_secs(1));
     /// assert!(session.expiry().is_some());
@@ -153,7 +141,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert!(!session.is_deleted());
     /// session.delete();
     /// assert!(session.is_deleted());
@@ -175,7 +163,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
     /// assert!(session.expiry().is_some());
@@ -192,7 +180,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
     /// assert!(session.expiry().is_some());
@@ -211,7 +199,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// session.expire_in(std::time::Duration::from_secs(1));
     /// assert!(session.expiry().is_some());
@@ -231,7 +219,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// assert_eq!(None, session.expiry());
     /// assert!(!session.is_expired());
     /// session.expire_in(Duration::from_secs(1));
@@ -257,7 +245,7 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session = Session::new(());
+    /// let mut session: Session<_> = Session::new(());
     /// session.expire_in(Duration::from_secs(123));
     /// let expires_in = session.expires_in().unwrap();
     /// assert!(123 - expires_in.as_secs() < 2);
@@ -383,19 +371,7 @@ impl<Data: Debug> SessionState<Data> {
 
 impl SessionId {
     /// Applies a cryptographic hash function on a cookie value to obtain the session id for that cookie.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let session = Session::new(());
-    /// let id = session.id().to_string();
-    /// let cookie_value = session.into_cookie_value().unwrap();
-    /// assert_eq!(id, Session::id_from_cookie_value(&cookie_value)?);
-    /// # Ok(()) }) }
-    /// ```
-    pub fn from_cookie_value(cookie_value: &str) -> Self {
+    pub(crate) fn from_cookie_value(cookie_value: &str) -> Self {
         // The original code used base64 encoded binary ids of length of a multiple of the blake3 block size.
         // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.
         let hash = blake3::hash(cookie_value.as_bytes());
