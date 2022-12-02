@@ -1,6 +1,6 @@
 [package]
 name = "typed-session"
-version = "0.1.0"
+version = "0.1.0-alpha.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ISibboI/typed-session"
 documentation = "https://docs.rs/typed-session"
@@ -9,11 +9,7 @@ readme = "README.md"
 edition = "2021"
 keywords = ["async", "typed", "session", "middleware"]
 categories = ["web-programming"]
-authors = [
-    "Sebastian Schmidt <isibboi@gmail.com>",
-    "Yoshua Wuyts <yoshuawuyts@gmail.com>",
-    "Jacob Rothstein <hi@jbr.me>"
-]
+authors = ["Sebastian Schmidt <isibboi@gmail.com>"]
 
 [dependencies]
 async-trait = "0.1.57"

@@ -1,7 +1,7 @@
-<h1 align="center">async-session</h1>
+<h1 align="center">typed-session</h1>
 <div align="center">
   <strong>
-    Async session support with pluggable middleware
+    Async typed session middleware
   </strong>
 </div>
 
@@ -9,17 +9,17 @@
 
 <div align="center">
   <!-- Crates version -->
-  <a href="https://crates.io/crates/async-session">
-    <img src="https://img.shields.io/crates/v/async-session.svg?style=flat-square"
+  <a href="https://crates.io/crates/typed-session">
+    <img src="https://img.shields.io/crates/v/typed-session.svg?style=flat-square"
     alt="Crates.io version" />
   </a>
   <!-- Downloads -->
-  <a href="https://crates.io/crates/async-session">
-    <img src="https://img.shields.io/crates/d/async-session.svg?style=flat-square"
+  <a href="https://crates.io/crates/typed-session">
+    <img src="https://img.shields.io/crates/d/typed-session.svg?style=flat-square"
       alt="Download" />
   </a>
   <!-- docs.rs docs -->
-  <a href="https://docs.rs/async-session">
+  <a href="https://docs.rs/typed-session">
     <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
       alt="docs.rs docs" />
   </a>
@@ -27,15 +27,15 @@
 
 <div align="center">
   <h3>
-    <a href="https://docs.rs/async-session">
+    <a href="https://docs.rs/typed-session">
       API Docs
     </a>
     <span> | </span>
-    <a href="https://github.com/http-rs/async-session/releases">
+    <a href="https://github.com/ISibboI/typed-session/releases">
       Releases
     </a>
     <span> | </span>
-    <a href="https://github.com/http-rs/async-session/blob/main/.github/CONTRIBUTING.md">
+    <a href="https://github.com/ISibboI/typed-session/blob/main/.github/CONTRIBUTING.md">
       Contributing
     </a>
   </h3>
@@ -43,22 +43,14 @@
 
 ## Available session stores
 
-* [async-sqlx-session](https://crates.io/crates/async-sqlx-session) postgres & sqlite
-* [async-redis-session](https://crates.io/crates/async-redis-session)
-* [async-mongodb-session](https://crates.io/crates/async-mongodb-session)
-* [async-session-r2d2](https://crates.io/crates/async-session-r2d2) - sqlite only
+* none so far
 
 ## Framework implementations
 
-* [`tide::sessions`](https://docs.rs/tide/latest/tide/sessions/index.html)
-* [warp-sessions](https://docs.rs/warp-sessions/latest/warp_sessions/)
-* [trillium-sessions](https://docs.trillium.rs/trillium_sessions)
-* [axum-sessions](https://docs.rs/axum_sessions)
-* [salvo-sessions](https://docs.rs/salvo_extra/latest/salvo_extra/session/index.html)
+* none so far
 
 ## Safety
-This crate uses ``#![deny(unsafe_code)]`` to ensure everything is implemented in
-100% Safe Rust.
+This crate uses ``#![deny(unsafe_code)]`` to ensure everything is implemented in 100% Safe Rust.
 
 ## Contributing
 Want to join us? Check out our ["Contributing" guide][contributing] and take a
@@ -67,15 +59,15 @@ look at some of these issues:
 - [Issues labeled "good first issue"][good-first-issue]
 - [Issues labeled "help wanted"][help-wanted]
 
-[contributing]: https://github.com/http-rs/async-session/blob/main/.github/CONTRIBUTING.md
-[good-first-issue]: https://github.com/http-rs/async-session/labels/good%20first%20issue
-[help-wanted]: https://github.com/http-rs/async-session/labels/help%20wanted
+[contributing]: https://github.com/http-rs/typed-session/blob/main/.github/CONTRIBUTING.md
+[good-first-issue]: https://github.com/http-rs/typed-session/labels/good%20first%20issue
+[help-wanted]: https://github.com/http-rs/typed-session/labels/help%20wanted
 
 ## Acknowledgements
 
-This work is based on the work initiated by
-[@chrisdickinson](https://github.com/chrisdickinson) in
-[tide#266](https://github.com/http-rs/tide/pull/266).
+This work is based on the crate [async-session](https://crates.io/crate/async-session) by 
+[Yoshua Wuyts](https://github.com/yoshuawuyts) and
+[Jacob Rothstein](https://github.com/jbr).
 
 ## License
 
