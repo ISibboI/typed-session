@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 ///
 /// This is the user-facing interface of the session store.
 /// It abstracts over CRUD-based database operations on sessions,
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SessionStore<Data, Implementation, const COOKIE_LENGTH: usize = 64> {
     implementation: Implementation,
     data: PhantomData<Data>,
