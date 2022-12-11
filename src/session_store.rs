@@ -38,12 +38,14 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     /// Get a session from the storage backend.
     ///
     /// The `cookie_value` is the value of a cookie identifying the session.
-    /// We take it by value, as it is sensible information that should not lay around longer than necessary.
     ///
     /// The return value is `Ok(Some(_))` if there is a session identified by the given cookie that is not expired,
     /// or `Ok(None)` if there is no such session that is not expired.
-    pub async fn load_session(&self, cookie_value: String) -> Result<Option<Session<Data>>> {
-        let session_id = SessionId::from_cookie_value(&cookie_value);
+    pub async fn load_session(
+        &self,
+        cookie_value: impl AsRef<str>,
+    ) -> Result<Option<Session<Data>>> {
+        let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
         self.implementation.read_session(&session_id).await
     }
 
