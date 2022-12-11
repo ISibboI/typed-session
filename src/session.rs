@@ -50,7 +50,7 @@ pub type SessionIdType = [u8; blake3::OUT_LEN];
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
-impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
+impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Create a new session. Does not set an expiry by default.
     /// The session id is generated once the session is stored in the session store.
     ///
@@ -99,7 +99,7 @@ impl<const COOKIE_LENGTH: usize, Data> Session<Data, COOKIE_LENGTH> {
     }
 }
 
-impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
+impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Returns the expiry timestamp of this session, if there is one.
     ///
     /// # Example
@@ -258,6 +258,12 @@ impl<const COOKIE_LENGTH: usize, Data: Debug> Session<Data, COOKIE_LENGTH> {
         } else {
             None
         }
+    }
+}
+
+impl<Data: Default, const COOKIE_LENGTH: usize> Default for Session<Data, COOKIE_LENGTH> {
+    fn default() -> Self {
+        Self::new(Data::default())
     }
 }
 
