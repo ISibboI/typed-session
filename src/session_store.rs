@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rand::distributions::{Alphanumeric, DistString};
 use rand::Rng;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 /// An async session store.
@@ -33,20 +34,6 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
             implementation,
             data: Default::default(),
         }
-    }
-
-    /// Get a session from the storage backend.
-    ///
-    /// The `cookie_value` is the value of a cookie identifying the session.
-    ///
-    /// The return value is `Ok(Some(_))` if there is a session identified by the given cookie that is not expired,
-    /// or `Ok(None)` if there is no such session that is not expired.
-    pub async fn load_session(
-        &self,
-        cookie_value: impl AsRef<str>,
-    ) -> Result<Option<Session<Data>>> {
-        let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
-        self.implementation.read_session(&session_id).await
     }
 
     /// Store a session in the storage backend.
@@ -139,6 +126,31 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     /// Empties the entire store, deleting all sessions.
     pub async fn clear_store(&mut self) -> Result {
         self.implementation.clear().await
+    }
+}
+
+impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH: usize>
+    SessionStore<Data, Implementation, COOKIE_LENGTH>
+{
+    /// Get a session from the storage backend.
+    ///
+    /// The `cookie_value` is the value of a cookie identifying the session.
+    ///
+    /// The return value is `Ok(Some(_))` if there is a session identified by the given cookie that is not expired,
+    /// or `Ok(None)` if there is no such session that is not expired.
+    pub async fn load_session(
+        &self,
+        cookie_value: impl AsRef<str>,
+    ) -> Result<Option<Session<Data>>> {
+        let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
+        Ok(self
+            .implementation
+            .read_session(&session_id)
+            .await?
+            // We could delete expired sessions here, but that does not make sense:
+            // the client will not purposefully send us an expired session cookie, so only in the unlikely
+            // event that the session expires while being transmitted this will actually be triggered.
+            .filter(|session| !session.is_expired()))
     }
 }
 
