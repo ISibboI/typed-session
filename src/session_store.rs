@@ -40,12 +40,12 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     /// If the session is marked for deletion, this method deletes the session.
     ///
     /// If the session cookie requires to be updated, because the session data or expiry changed,
-    /// then a [SetSessionCookieCommand] is returned.
+    /// then a [SessionCookieCommand] is returned.
     pub async fn store_session(
         &mut self,
         session: Session<Data>,
         rng: &mut impl Rng,
-    ) -> Result<Option<SetSessionCookieCommand>> {
+    ) -> Result<SessionCookieCommand> {
         if matches!(
             &session.state,
             SessionState::New { .. } | SessionState::Changed { .. } | SessionState::Deleted { .. }
@@ -72,7 +72,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                 }
             }
         } else {
-            Ok(None)
+            Ok(SessionCookieCommand::DoNothing)
         }
     }
 
@@ -80,7 +80,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
         &mut self,
         session: &Session<Data>,
         rng: &mut impl Rng,
-    ) -> Result<WriteSessionResult<Option<SetSessionCookieCommand>>> {
+    ) -> Result<WriteSessionResult<SessionCookieCommand>> {
         match &session.state {
             SessionState::New { expiry, data } => {
                 let cookie_value = generate_cookie::<COOKIE_LENGTH>(rng);
@@ -89,11 +89,9 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                     .implementation
                     .create_session(&id, expiry, data)
                     .await?
-                    .map(|()| {
-                        Some(SetSessionCookieCommand {
-                            cookie_value,
-                            expiry: *expiry,
-                        })
+                    .map(|()| SessionCookieCommand::Set {
+                        cookie_value,
+                        expiry: *expiry,
                     }))
             }
             SessionState::Changed {
@@ -107,16 +105,14 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                     .implementation
                     .update_session(old_id, &id, expiry, data)
                     .await?
-                    .map(|()| {
-                        Some(SetSessionCookieCommand {
-                            cookie_value,
-                            expiry: *expiry,
-                        })
+                    .map(|()| SessionCookieCommand::Set {
+                        cookie_value,
+                        expiry: *expiry,
                     }))
             }
             SessionState::Deleted { id } => {
                 self.implementation.delete_session(id).await?;
-                Ok(WriteSessionResult::Ok(None))
+                Ok(WriteSessionResult::Ok(SessionCookieCommand::Delete))
             }
             SessionState::Unchanged { .. } | SessionState::NewDeleted => unreachable!(),
             SessionState::Invalid => unreachable!("Invalid state is used internally only"),
@@ -215,11 +211,19 @@ impl<OkData> WriteSessionResult<OkData> {
     }
 }
 
-/// Indicates that the client's session cookie should be updated.
+/// Indicates if the client's session cookie should be updated.
 #[derive(Debug)]
-pub struct SetSessionCookieCommand {
-    /// The value of the session cookie.
-    pub cookie_value: String,
-    /// The expiry time of the session cookie.
-    pub expiry: Option<DateTime<Utc>>,
+pub enum SessionCookieCommand {
+    /// Set or update the session cookie.
+    Set {
+        /// The value of the session cookie.
+        cookie_value: String,
+        /// The expiry time of the session cookie.
+        expiry: Option<DateTime<Utc>>,
+    },
+    /// Delete the session cookie.
+    Delete,
+    /// Do not inform the client about any updates to the session cookie.
+    /// This means that the cookie stayed the same.
+    DoNothing,
 }

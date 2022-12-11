@@ -11,7 +11,7 @@
 //! Whenever the data or expiry of a session is accessed mutably, the session is marked as changed.
 //! The session store only forwards updates to its implementation when a change has happened.
 //! Further, the session store is responsible for deciding whether the session cookie should be
-//! renewed, hence its functions return an `Option<`[`SetSessionCookieCommand`]`>` where applicable.
+//! renewed, hence its functions return an `Option<`[`SessionCookieCommand`]`>` where applicable.
 //!
 //! # Security
 //!
@@ -24,6 +24,7 @@
 //!
 //! # fn main() -> typed_session::Result {
 //! # use rand::thread_rng;
+//! # use typed_session::SessionCookieCommand;
 //! # async_std::task::block_on(async {
 //! #
 //! // Make sure to use a cryptographically secure random generator.
@@ -36,13 +37,13 @@
 //! // Create and store a new session.
 //! // The session can hold arbitrary data, but session stores are type safe,
 //! // i.e. all sessions must hold data of the same type.
-//! // Use e.g. an enum to distinguish session states like anonymous or logged-in as user X.
+//! // Use e.g. an enum to distinguish session states like "anonymous" or "logged-in as user X".
 //! let session = Session::new(15);
-//! let set_cookie_command = store.store_session(session, &mut rng).await?.unwrap();
+//! let SessionCookieCommand::Set { cookie_value, ..} = store.store_session(session, &mut rng).await? else {unreachable!("New sessions without expiry always set the cookie")};
 //! // The set_cookie_command contains the cookie value and the expiry to be sent to the client.
 //!
 //! // Retrieve the session using the cookie.
-//! let session = store.load_session(set_cookie_command.cookie_value).await?.unwrap();
+//! let session = store.load_session(cookie_value).await?.unwrap();
 //! assert_eq!(*session.data(), 15);
 //! #
 //! # Ok(()) }) }
@@ -74,4 +75,4 @@ mod session_store;
 //pub use cookie_store::CookieStore;
 pub use memory_store::MemoryStore;
 pub use session::{Session, SessionId, SessionIdType};
-pub use session_store::{SessionStore, SessionStoreImplementation, SetSessionCookieCommand};
+pub use session_store::{SessionCookieCommand, SessionStore, SessionStoreImplementation};
