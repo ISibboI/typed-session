@@ -1,6 +1,7 @@
 use crate::session::{SessionId, SessionState};
-use crate::{async_trait, Result, Session};
+use crate::{Result, Session};
 use anyhow::Error;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rand::distributions::{Alphanumeric, DistString};
 use rand::Rng;

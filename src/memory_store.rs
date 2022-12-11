@@ -1,5 +1,6 @@
 use crate::session_store::WriteSessionResult;
-use crate::{async_trait, Result, Session, SessionId, SessionStoreImplementation};
+use crate::{Result, Session, SessionId, SessionStoreImplementation};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -108,12 +109,12 @@ impl<Data> MemoryStore<Data> {
     /// intermittent basis if this store is run for long enough that
     /// memory accumulation is a concern.
     pub async fn cleanup(&mut self) -> Result {
-        log::trace!("Cleaning up memory store...");
+        tracing::trace!("Cleaning up memory store...");
         let now = Utc::now();
         let initial_len = self.session_map.len();
         self.session_map
             .retain(|_, body| body.expiry.map(|expiry| expiry > now).unwrap_or(true));
-        log::trace!(
+        tracing::trace!(
             "Deleted {} expired sessions",
             initial_len - self.session_map.len()
         );
