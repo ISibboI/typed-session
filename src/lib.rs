@@ -38,7 +38,7 @@
 //! // The session can hold arbitrary data, but session stores are type safe,
 //! // i.e. all sessions must hold data of the same type.
 //! // Use e.g. an enum to distinguish session states like "anonymous" or "logged-in as user X".
-//! let session = Session::new(15);
+//! let session = Session::new_with_data(15);
 //! let SessionCookieCommand::Set { cookie_value, ..} = store.store_session(session, &mut rng).await? else {unreachable!("New sessions without expiry always set the cookie")};
 //! // The set_cookie_command contains the cookie value and the expiry to be sent to the client.
 //!

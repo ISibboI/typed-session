@@ -48,7 +48,9 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     ) -> Result<SessionCookieCommand> {
         if matches!(
             &session.state,
-            SessionState::New { .. } | SessionState::Changed { .. } | SessionState::Deleted { .. }
+            SessionState::NewChanged { .. }
+                | SessionState::Changed { .. }
+                | SessionState::Deleted { .. }
         ) {
             if let Some(maximum_retries_on_collision) =
                 Implementation::MAXIMUM_RETRIES_ON_ID_COLLISION
@@ -82,7 +84,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
         rng: &mut impl Rng,
     ) -> Result<WriteSessionResult<SessionCookieCommand>> {
         match &session.state {
-            SessionState::New { expiry, data } => {
+            SessionState::NewChanged { expiry, data } => {
                 let cookie_value = generate_cookie::<COOKIE_LENGTH>(rng);
                 let id = SessionId::from_cookie_value(&cookie_value);
                 Ok(self
@@ -114,7 +116,9 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                 self.implementation.delete_session(id).await?;
                 Ok(WriteSessionResult::Ok(SessionCookieCommand::Delete))
             }
-            SessionState::Unchanged { .. } | SessionState::NewDeleted => unreachable!(),
+            SessionState::NewUnchanged { .. }
+            | SessionState::Unchanged { .. }
+            | SessionState::NewDeleted => unreachable!(),
             SessionState::Invalid => unreachable!("Invalid state is used internally only"),
         }
     }

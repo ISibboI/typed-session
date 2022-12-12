@@ -17,8 +17,12 @@ pub struct Session<Data, const COOKIE_LENGTH: usize = 64> {
 
 #[derive(Debug, Clone)]
 pub(crate) enum SessionState<Data> {
-    /// The session was newly generated for this request.
-    New {
+    /// The session was newly generated for this request, and not yet written to.
+    /// In this state, the session does not necessarily need to be communicated to the client.
+    NewUnchanged { data: Data },
+    /// The session was newly generated for this request, and was written to.
+    /// In this state, the session must be communicated to the client.
+    NewChanged {
         expiry: Option<DateTime<Utc>>,
         data: Data,
     },
@@ -50,21 +54,44 @@ pub type SessionIdType = [u8; blake3::OUT_LEN];
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
-impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
-    /// Create a new session. Does not set an expiry by default.
-    /// The session id is generated once the session is stored in the session store.
+impl<Data: Default, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+    /// Create a new session with default data. Does not set an expiry.
+    /// Using this method does not mark the session as changed, i.e. it will be silently dropped if
+    /// neither the data nor the expiry are accessed mutably.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let session: Session<_> = Session::new(());
+    /// let session: Session<i32> = Session::new();
     /// assert_eq!(None, session.expiry());
+    /// assert_eq!(i32::default(), *session.data());
     /// # Ok(()) }) }
-    pub fn new(data: Data) -> Self {
+    pub fn new() -> Self {
         Self {
-            state: SessionState::new(data),
+            state: SessionState::new(),
+        }
+    }
+}
+
+impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+    /// Create a new session with the given session data. Does not set an expiry.
+    /// Using this method marks the session as changed, i.e. it will be stored in the backend and
+    /// communicated to the client even if it was created with default data and never accessed mutably.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use typed_session::Session;
+    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// let session: Session<_> = Session::new_with_data(4);
+    /// assert_eq!(None, session.expiry());
+    /// assert_eq!(4, *session.data());
+    /// # Ok(()) }) }
+    pub fn new_with_data(data: Data) -> Self {
+        Self {
+            state: SessionState::new_with_data(data),
         }
     }
 
@@ -89,7 +116,7 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_deleted());
     /// session.delete();
     /// assert!(session.is_deleted());
@@ -107,7 +134,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert_eq!(None, session.expiry());
     /// session.expire_in(std::time::Duration::from_secs(1));
     /// assert!(session.expiry().is_some());
@@ -141,7 +168,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_deleted());
     /// session.delete();
     /// assert!(session.is_deleted());
@@ -163,7 +190,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert_eq!(None, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
     /// assert!(session.expiry().is_some());
@@ -180,7 +207,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert_eq!(None, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
     /// assert!(session.expiry().is_some());
@@ -199,7 +226,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// ```rust
     /// # use typed_session::Session;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert_eq!(None, session.expiry());
     /// session.expire_in(std::time::Duration::from_secs(1));
     /// assert!(session.expiry().is_some());
@@ -219,7 +246,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// assert_eq!(None, session.expiry());
     /// assert!(!session.is_expired());
     /// session.expire_in(Duration::from_secs(1));
@@ -245,7 +272,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// # use std::time::Duration;
     /// # use async_std::task;
     /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
-    /// let mut session: Session<_> = Session::new(());
+    /// let mut session: Session<()> = Session::new();
     /// session.expire_in(Duration::from_secs(123));
     /// let expires_in = session.expires_in().unwrap();
     /// assert!(123 - expires_in.as_secs() < 2);
@@ -263,13 +290,21 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
 
 impl<Data: Default, const COOKIE_LENGTH: usize> Default for Session<Data, COOKIE_LENGTH> {
     fn default() -> Self {
-        Self::new(Data::default())
+        Self::new()
+    }
+}
+
+impl<Data: Default> SessionState<Data> {
+    fn new() -> Self {
+        Self::NewUnchanged {
+            data: Default::default(),
+        }
     }
 }
 
 impl<Data> SessionState<Data> {
-    fn new(data: Data) -> Self {
-        Self::New { expiry: None, data }
+    fn new_with_data(data: Data) -> Self {
+        Self::NewChanged { data, expiry: None }
     }
 
     fn new_from_session_store(id: SessionId, expiry: Option<DateTime<Utc>>, data: Data) -> Self {
@@ -284,7 +319,8 @@ impl<Data> SessionState<Data> {
 impl<Data: Debug> SessionState<Data> {
     fn expiry(&self) -> Option<&DateTime<Utc>> {
         match self {
-            Self::New { expiry, .. }
+            Self::NewUnchanged { .. } => None,
+            Self::NewChanged { expiry, .. }
             | Self::Unchanged { expiry, .. }
             | Self::Changed { expiry, .. } => expiry.as_ref(),
             Self::Deleted { .. } | Self::NewDeleted => {
@@ -298,11 +334,12 @@ impl<Data: Debug> SessionState<Data> {
         self.change();
 
         match self {
-            Self::New { expiry, .. }
-            | Self::Unchanged { expiry, .. }
-            | Self::Changed { expiry, .. } => expiry,
+            Self::NewChanged { expiry, .. } | Self::Changed { expiry, .. } => expiry,
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to retrieve the expiry of a purged session {self:?}")
+            }
+            Self::NewUnchanged { .. } | Self::Unchanged { .. } => {
+                unreachable!("Cannot be unchanged after explicitly changing")
             }
             Self::Invalid => unreachable!("Invalid state is used internally only"),
         }
@@ -310,9 +347,10 @@ impl<Data: Debug> SessionState<Data> {
 
     fn data(&self) -> &Data {
         match self {
-            Self::New { data, .. } | Self::Unchanged { data, .. } | Self::Changed { data, .. } => {
-                data
-            }
+            Self::NewUnchanged { data }
+            | Self::NewChanged { data, .. }
+            | Self::Unchanged { data, .. }
+            | Self::Changed { data, .. } => data,
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to retrieve the data of a purged session {self:?}")
             }
@@ -324,11 +362,12 @@ impl<Data: Debug> SessionState<Data> {
         self.change();
 
         match self {
-            Self::New { data, .. } | Self::Unchanged { data, .. } | Self::Changed { data, .. } => {
-                data
-            }
+            Self::NewChanged { data, .. } | Self::Changed { data, .. } => data,
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to retrieve the data of a purged session {self:?}")
+            }
+            Self::NewUnchanged { .. } | Self::Unchanged { .. } => {
+                unreachable!("Cannot be unchanged after explicitly changing")
             }
             Self::Invalid => unreachable!("Invalid state is used internally only"),
         }
@@ -336,7 +375,9 @@ impl<Data: Debug> SessionState<Data> {
 
     fn change(&mut self) {
         match self {
-            Self::New { .. } => { /* New implies changed, as new sessions anyways need to be communicated to client and database. */
+            Self::NewUnchanged { .. } => {
+                let Self::NewUnchanged { data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                *self = Self::NewChanged { expiry: None, data };
             }
             Self::Unchanged { .. } => {
                 let Self::Unchanged { id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
@@ -346,7 +387,7 @@ impl<Data: Debug> SessionState<Data> {
                     data,
                 };
             }
-            Self::Changed { .. } => { /* Already changed. */ }
+            Self::Changed { .. } | Self::NewChanged { .. } => { /* Already changed. */ }
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to change purged session {self:?}")
             }
@@ -356,7 +397,7 @@ impl<Data: Debug> SessionState<Data> {
 
     fn delete(&mut self) {
         match self {
-            Self::New { .. } => {
+            Self::NewUnchanged { .. } | Self::NewChanged { .. } => {
                 *self = Self::NewDeleted;
             }
             Self::Unchanged { .. } => {
