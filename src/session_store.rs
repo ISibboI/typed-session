@@ -150,11 +150,8 @@ impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE
     }
 }
 
-impl<
-        Data,
-        Implementation: SessionStoreImplementation<Data> + Clone,
-        const COOKIE_LENGTH: usize,
-    > Clone for SessionStore<Data, Implementation, COOKIE_LENGTH>
+impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize> Clone
+    for SessionStore<Data, Implementation, COOKIE_LENGTH>
 {
     fn clone(&self) -> Self {
         Self {
