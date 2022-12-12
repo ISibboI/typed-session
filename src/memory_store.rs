@@ -1,9 +1,10 @@
 use crate::session_store::WriteSessionResult;
-use crate::{Result, Session, SessionId, SessionStoreImplementation};
+use crate::{Result, Session, SessionExpiry, SessionId, SessionStoreImplementation};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 /// # in-memory session store
 /// Because there is no external
@@ -26,12 +27,14 @@ use std::fmt::Debug;
 ///
 #[derive(Debug, Clone)]
 pub struct MemoryStore<Data> {
-    session_map: HashMap<SessionId, SessionBody<Data>>,
+    session_map: HashMap<SessionId, Arc<SessionBody<Data>>>,
 }
 
 #[derive(Debug, Clone)]
 struct SessionBody<Data> {
-    expiry: Option<DateTime<Utc>>,
+    current_id: SessionId,
+    previous_id: Option<SessionId>,
+    expiry: SessionExpiry,
     data: Data,
 }
 
@@ -42,44 +45,68 @@ impl<Data: Send + Sync + Clone> SessionStoreImplementation<Data> for MemoryStore
     async fn create_session(
         &mut self,
         id: &SessionId,
-        expiry: &Option<DateTime<Utc>>,
+        expiry: &SessionExpiry,
         data: &Data,
     ) -> Result<WriteSessionResult> {
         // replace with `try_insert` once stable #82766
         if self.session_map.contains_key(id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
-            self.session_map
-                .insert(id.clone(), SessionBody::new_cloned(expiry, data));
+            self.session_map.insert(
+                id.clone(),
+                Arc::new(SessionBody::new_cloned(id, None, expiry, data)),
+            );
             Ok(WriteSessionResult::Ok(()))
         }
     }
 
     async fn read_session(&self, id: &SessionId) -> Result<Option<Session<Data>>> {
         Ok(self.session_map.get(id).map(|body| {
-            Session::new_from_session_store(id.clone(), body.expiry, body.data.clone())
+            Session::new_from_session_store(
+                body.current_id.clone(),
+                body.previous_id.clone(),
+                body.expiry,
+                body.data.clone(),
+            )
         }))
     }
 
     async fn update_session(
         &mut self,
-        old_id: &SessionId,
-        new_id: &SessionId,
-        expiry: &Option<DateTime<Utc>>,
+        current_id: &SessionId,
+        previous_id: &SessionId,
+        deletable_id: &Option<SessionId>,
+        expiry: &SessionExpiry,
         data: &Data,
     ) -> Result<WriteSessionResult> {
-        if self.session_map.contains_key(new_id) {
+        if self.session_map.contains_key(previous_id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
-            self.session_map.remove(old_id);
-            self.session_map
-                .insert(new_id.clone(), SessionBody::new_cloned(expiry, data));
+            if let Some(deletable_id) = deletable_id {
+                self.session_map.remove(deletable_id);
+            }
+
+            let body = Arc::new(SessionBody::new_cloned(
+                current_id,
+                Some(previous_id),
+                expiry,
+                data,
+            ));
+            self.session_map.insert(current_id.clone(), body.clone());
+            self.session_map.insert(previous_id.clone(), body);
             Ok(WriteSessionResult::Ok(()))
         }
     }
 
-    async fn delete_session(&mut self, id: &SessionId) -> Result<()> {
-        self.session_map.remove(id);
+    async fn delete_session(
+        &mut self,
+        current_id: &SessionId,
+        previous_id: &Option<SessionId>,
+    ) -> Result<()> {
+        self.session_map.remove(current_id);
+        if let Some(previous_id) = previous_id.as_ref() {
+            self.session_map.remove(previous_id);
+        }
         Ok(())
     }
 
@@ -112,8 +139,10 @@ impl<Data> MemoryStore<Data> {
         tracing::trace!("Cleaning up memory store...");
         let now = Utc::now();
         let initial_len = self.session_map.len();
-        self.session_map
-            .retain(|_, body| body.expiry.map(|expiry| expiry > now).unwrap_or(true));
+        self.session_map.retain(|_, body| match body.expiry {
+            SessionExpiry::DateTime(expiry) => expiry > now,
+            SessionExpiry::Never => true,
+        });
         tracing::trace!(
             "Deleted {} expired sessions",
             initial_len - self.session_map.len()
@@ -123,8 +152,15 @@ impl<Data> MemoryStore<Data> {
 }
 
 impl<Data: Clone> SessionBody<Data> {
-    fn new_cloned(expiry: &Option<DateTime<Utc>>, data: &Data) -> Self {
+    fn new_cloned(
+        current_id: &SessionId,
+        previous_id: Option<&SessionId>,
+        expiry: &SessionExpiry,
+        data: &Data,
+    ) -> Self {
         Self {
+            current_id: current_id.clone(),
+            previous_id: previous_id.cloned(),
             expiry: *expiry,
             data: data.clone(),
         }

@@ -22,29 +22,41 @@ pub(crate) enum SessionState<Data> {
     NewUnchanged { data: Data },
     /// The session was newly generated for this request, and was written to.
     /// In this state, the session must be communicated to the client.
-    NewChanged {
-        expiry: Option<DateTime<Utc>>,
-        data: Data,
-    },
+    NewChanged { expiry: SessionExpiry, data: Data },
     /// The session was loaded from the session store, and was not changed.
     Unchanged {
-        id: SessionId,
-        expiry: Option<DateTime<Utc>>,
+        previous_id: Option<SessionId>,
+        current_id: SessionId,
+        expiry: SessionExpiry,
         data: Data,
     },
     /// The session was loaded from the session store, and was changed.
     /// Either the expiry datetime or the data have changed.
     Changed {
-        old_id: SessionId,
-        expiry: Option<DateTime<Utc>>,
+        deletable_id: Option<SessionId>,
+        previous_id: SessionId,
+        expiry: SessionExpiry,
         data: Data,
     },
     /// The session was marked for deletion.
-    Deleted { id: SessionId },
+    Deleted {
+        current_id: SessionId,
+        previous_id: Option<SessionId>,
+    },
     /// The session was marked for deletion before it was ever communicated to database or client.
     NewDeleted,
     /// Used internally to avoid unsafe code when replacing the session state through a mutable reference.
     Invalid,
+}
+
+/// The expiry of a session.
+/// Either a given date and time, or never.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum SessionExpiry {
+    /// The session expires at the given date and time.
+    DateTime(DateTime<Utc>),
+    /// The session never expires, unless it is explicitly deleted.
+    Never,
 }
 
 /// The type of a session id.
@@ -63,9 +75,10 @@ impl<Data: Default, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let session: Session<i32> = Session::new();
-    /// assert_eq!(None, session.expiry());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
     /// assert_eq!(i32::default(), *session.data());
     /// # Ok(()) }) }
     pub fn new() -> Self {
@@ -84,9 +97,10 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let session: Session<_> = Session::new_with_data(4);
-    /// assert_eq!(None, session.expiry());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
     /// assert_eq!(4, *session.data());
     /// # Ok(()) }) }
     pub fn new_with_data(data: Data) -> Self {
@@ -100,12 +114,13 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Create a session instance from parts loaded by a session store.
     /// The session state will be `Unchanged`.
     pub fn new_from_session_store(
-        id: SessionId,
-        expiry: Option<DateTime<Utc>>,
+        current_id: SessionId,
+        previous_id: Option<SessionId>,
+        expiry: SessionExpiry,
         data: Data,
     ) -> Self {
         Self {
-            state: SessionState::new_from_session_store(id, expiry, data),
+            state: SessionState::new_from_session_store(current_id, previous_id, expiry, data),
         }
     }
 
@@ -133,14 +148,16 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// assert_eq!(None, session.expiry());
-    /// session.expire_in(std::time::Duration::from_secs(1));
-    /// assert!(session.expiry().is_some());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
+    /// session.expire_in(Utc::now(), std::time::Duration::from_secs(1));
+    /// assert!(matches!(session.expiry(), SessionExpiry::DateTime { .. }));
     /// # Ok(()) }) }
     /// ```
-    pub fn expiry(&self) -> Option<&DateTime<Utc>> {
+    pub fn expiry(&self) -> &SessionExpiry {
         self.state.expiry()
     }
 
@@ -189,15 +206,16 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// assert_eq!(None, session.expiry());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
-    /// assert!(session.expiry().is_some());
+    /// assert!(matches!(session.expiry(), SessionExpiry::DateTime { .. }));
     /// # Ok(()) }) }
     /// ```
     pub fn set_expiry(&mut self, expiry: DateTime<Utc>) {
-        *self.state.expiry_mut() = Some(expiry);
+        *self.state.expiry_mut() = SessionExpiry::DateTime(expiry);
     }
 
     /// Sets this session to never expire.
@@ -206,17 +224,18 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// assert_eq!(None, session.expiry());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
     /// session.set_expiry(chrono::Utc::now());
-    /// assert!(session.expiry().is_some());
+    /// assert!(matches!(session.expiry(), SessionExpiry::DateTime { .. }));
     /// session.do_not_expire();
-    /// assert!(session.expiry().is_none());
+    /// assert!(matches!(session.expiry(), SessionExpiry::Never));
     /// # Ok(()) }) }
     /// ```
     pub fn do_not_expire(&mut self) {
-        *self.state.expiry_mut() = None;
+        *self.state.expiry_mut() = SessionExpiry::Never;
     }
 
     /// Sets this session to expire `ttl` time into the future.
@@ -225,15 +244,17 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// assert_eq!(None, session.expiry());
-    /// session.expire_in(std::time::Duration::from_secs(1));
-    /// assert!(session.expiry().is_some());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
+    /// session.expire_in(Utc::now(), std::time::Duration::from_secs(1));
+    /// assert!(matches!(session.expiry(), SessionExpiry::DateTime { .. }));
     /// # Ok(()) }) }
     /// ```
-    pub fn expire_in(&mut self, ttl: std::time::Duration) {
-        *self.state.expiry_mut() = Some(Utc::now() + Duration::from_std(ttl).unwrap());
+    pub fn expire_in(&mut self, now: DateTime<Utc>, ttl: std::time::Duration) {
+        *self.state.expiry_mut() = SessionExpiry::DateTime(now + Duration::from_std(ttl).unwrap());
     }
 
     /// Return true if the session is expired.
@@ -245,20 +266,22 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// # use typed_session::Session;
     /// # use std::time::Duration;
     /// # use async_std::task;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # use typed_session::SessionExpiry;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// assert_eq!(None, session.expiry());
-    /// assert!(!session.is_expired());
-    /// session.expire_in(Duration::from_secs(1));
-    /// assert!(!session.is_expired());
+    /// assert_eq!(&SessionExpiry::Never, session.expiry());
+    /// assert!(!session.is_expired(Utc::now()));
+    /// session.expire_in(Utc::now(), Duration::from_secs(1));
+    /// assert!(!session.is_expired(Utc::now()));
     /// task::sleep(Duration::from_secs(2)).await;
-    /// assert!(session.is_expired());
+    /// assert!(session.is_expired(Utc::now()));
     /// # Ok(()) }) }
     /// ```
-    pub fn is_expired(&self) -> bool {
+    pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
         match self.state.expiry() {
-            Some(expiry) => *expiry < Utc::now(),
-            None => false,
+            SessionExpiry::DateTime(expiry) => *expiry < now,
+            SessionExpiry::Never => false,
         }
     }
 
@@ -271,19 +294,25 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// # use typed_session::Session;
     /// # use std::time::Duration;
     /// # use async_std::task;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
-    /// session.expire_in(Duration::from_secs(123));
-    /// let expires_in = session.expires_in().unwrap();
+    /// session.expire_in(Utc::now(), Duration::from_secs(123));
+    /// let expires_in = session.expires_in(Utc::now()).unwrap();
     /// assert!(123 - expires_in.as_secs() < 2);
     /// # Ok(()) }) }
     /// ```
-    pub fn expires_in(&self) -> Option<std::time::Duration> {
-        let duration = self.state.expiry()?.signed_duration_since(Utc::now());
-        if duration > Duration::zero() {
-            Some(duration.to_std().unwrap())
-        } else {
-            None
+    pub fn expires_in(&self, now: DateTime<Utc>) -> Option<std::time::Duration> {
+        match self.state.expiry() {
+            SessionExpiry::DateTime(date_time) => {
+                let duration = date_time.signed_duration_since(now);
+                if duration > Duration::zero() {
+                    Some(duration.to_std().unwrap())
+                } else {
+                    None
+                }
+            }
+            SessionExpiry::Never => None,
         }
     }
 }
@@ -304,11 +333,24 @@ impl<Data: Default> SessionState<Data> {
 
 impl<Data> SessionState<Data> {
     fn new_with_data(data: Data) -> Self {
-        Self::NewChanged { data, expiry: None }
+        Self::NewChanged {
+            data,
+            expiry: SessionExpiry::Never,
+        }
     }
 
-    fn new_from_session_store(id: SessionId, expiry: Option<DateTime<Utc>>, data: Data) -> Self {
-        Self::Unchanged { id, expiry, data }
+    fn new_from_session_store(
+        current_id: SessionId,
+        previous_id: Option<SessionId>,
+        expiry: SessionExpiry,
+        data: Data,
+    ) -> Self {
+        Self::Unchanged {
+            current_id,
+            previous_id,
+            expiry,
+            data,
+        }
     }
 
     fn is_deleted(&self) -> bool {
@@ -317,12 +359,12 @@ impl<Data> SessionState<Data> {
 }
 
 impl<Data: Debug> SessionState<Data> {
-    fn expiry(&self) -> Option<&DateTime<Utc>> {
+    fn expiry(&self) -> &SessionExpiry {
         match self {
-            Self::NewUnchanged { .. } => None,
+            Self::NewUnchanged { .. } => &SessionExpiry::Never,
             Self::NewChanged { expiry, .. }
             | Self::Unchanged { expiry, .. }
-            | Self::Changed { expiry, .. } => expiry.as_ref(),
+            | Self::Changed { expiry, .. } => expiry,
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to retrieve the expiry of a purged session {self:?}")
             }
@@ -330,7 +372,7 @@ impl<Data: Debug> SessionState<Data> {
         }
     }
 
-    fn expiry_mut(&mut self) -> &mut Option<DateTime<Utc>> {
+    fn expiry_mut(&mut self) -> &mut SessionExpiry {
         self.change();
 
         match self {
@@ -377,12 +419,16 @@ impl<Data: Debug> SessionState<Data> {
         match self {
             Self::NewUnchanged { .. } => {
                 let Self::NewUnchanged { data } = mem::replace(self, Self::Invalid) else {unreachable!()};
-                *self = Self::NewChanged { expiry: None, data };
+                *self = Self::NewChanged {
+                    expiry: SessionExpiry::Never,
+                    data,
+                };
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged { current_id, previous_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
                 *self = Self::Changed {
-                    old_id: id,
+                    previous_id: current_id,
+                    deletable_id: previous_id,
                     expiry,
                     data,
                 };
@@ -401,12 +447,18 @@ impl<Data: Debug> SessionState<Data> {
                 *self = Self::NewDeleted;
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
-                *self = Self::Deleted { id };
+                let Self::Unchanged { current_id, previous_id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                *self = Self::Deleted {
+                    current_id,
+                    previous_id,
+                };
             }
             Self::Changed { .. } => {
-                let Self::Changed { old_id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
-                *self = Self::Deleted { id: old_id };
+                let Self::Changed { previous_id, deletable_id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                *self = Self::Deleted {
+                    current_id: previous_id,
+                    previous_id: deletable_id,
+                };
             }
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to purge a purged session {self:?}")

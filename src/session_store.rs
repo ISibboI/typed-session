@@ -1,8 +1,9 @@
 use crate::session::{SessionId, SessionState};
-use crate::{Result, Session};
+use crate::{Result, Session, SessionExpiry};
 use anyhow::Error;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::Duration;
+use chrono::Utc;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::Rng;
 use std::fmt::Debug;
@@ -10,12 +11,30 @@ use std::marker::PhantomData;
 
 /// An async session store.
 ///
-/// This is the user-facing interface of the session store.
-/// It abstracts over CRUD-based database operations on sessions,
+/// This is the "front-end" interface of the session store.
 #[derive(Debug)]
 pub struct SessionStore<Data, Implementation, const COOKIE_LENGTH: usize = 64> {
     implementation: Implementation,
+    expiry_strategy: SessionRenewalStrategy,
     data: PhantomData<Data>,
+}
+
+/// The strategy to renew sessions.
+#[derive(Clone, Copy, Debug)]
+pub enum SessionRenewalStrategy {
+    /// Never update the expiry of a session.
+    /// This leaves updating expiry times to the user.
+    Ignore,
+
+    /// Sessions have a given time-to-live, and their expiry is renewed periodically.
+    /// For example, if the TTL is 7 days, and the maximum remaining TTL for renewal is 6 days,
+    /// then the session's expiry will be updated about daily, if the session is being used.
+    AutomaticRenewal {
+        /// The time-to-live for a new or renewed session.
+        time_to_live: Duration,
+        /// The maximum remaining time-to-live to trigger a session renewal.
+        maximum_remaining_time_to_live_for_renewal: Duration,
+    },
 }
 
 /// Generate a random cookie.
@@ -29,9 +48,15 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     SessionStore<Data, Implementation, COOKIE_LENGTH>
 {
     /// Create a new session store with the given implementation.
-    pub fn new(implementation: Implementation) -> Self {
+    ///
+    /// The `session_time_to_live` is the time-to-live set for every newly created or updated session.
+    /// The `minimum_session_renewal_interval` is the minimum time span that needs to pass before
+    /// a session is automatically renewed with a new expiry time.
+    /// Set this to some reasonable length to avoid renewing the session on every request.
+    pub fn new(implementation: Implementation, expiry_strategy: SessionRenewalStrategy) -> Self {
         Self {
             implementation,
+            expiry_strategy,
             data: Default::default(),
         }
     }
@@ -97,23 +122,29 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                     }))
             }
             SessionState::Changed {
-                old_id,
+                previous_id,
+                deletable_id,
                 expiry,
                 data,
             } => {
                 let cookie_value = generate_cookie::<COOKIE_LENGTH>(rng);
-                let id = SessionId::from_cookie_value(&cookie_value);
+                let current_id = SessionId::from_cookie_value(&cookie_value);
                 Ok(self
                     .implementation
-                    .update_session(old_id, &id, expiry, data)
+                    .update_session(&current_id, previous_id, deletable_id, expiry, data)
                     .await?
                     .map(|()| SessionCookieCommand::Set {
                         cookie_value,
                         expiry: *expiry,
                     }))
             }
-            SessionState::Deleted { id } => {
-                self.implementation.delete_session(id).await?;
+            SessionState::Deleted {
+                current_id,
+                previous_id,
+            } => {
+                self.implementation
+                    .delete_session(current_id, previous_id)
+                    .await?;
                 Ok(WriteSessionResult::Ok(SessionCookieCommand::Delete))
             }
             SessionState::NewUnchanged { .. }
@@ -143,14 +174,39 @@ impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE
         cookie_value: impl AsRef<str>,
     ) -> Result<Option<Session<Data>>> {
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
-        Ok(self
-            .implementation
-            .read_session(&session_id)
-            .await?
-            // We could delete expired sessions here, but that does not make sense:
-            // the client will not purposefully send us an expired session cookie, so only in the unlikely
-            // event that the session expires while being transmitted this will actually be triggered.
-            .filter(|session| !session.is_expired()))
+        if let Some(mut session) = self.implementation.read_session(&session_id).await? {
+            let now = Utc::now();
+            if session.is_expired(now) {
+                // We could delete expired sessions here, but that does not make sense:
+                // the client will not purposefully send us an expired session cookie, so only in the unlikely
+                // event that the session expires while being transmitted this will actually be triggered.
+                return Ok(None);
+            }
+
+            match &self.expiry_strategy {
+                SessionRenewalStrategy::Ignore => {}
+                SessionRenewalStrategy::AutomaticRenewal {
+                    time_to_live,
+                    maximum_remaining_time_to_live_for_renewal,
+                } => {
+                    let new_expiry = now + *time_to_live;
+                    match *session.expiry() {
+                        SessionExpiry::DateTime(old_expiry) => {
+                            // Renew only if within maximum remaining time.
+                            if old_expiry - now <= *maximum_remaining_time_to_live_for_renewal {
+                                session.set_expiry(new_expiry);
+                            }
+                        }
+                        // Always renew if the expiry is set to never, otherwise the session will never expire.
+                        SessionExpiry::Never => session.set_expiry(new_expiry),
+                    }
+                }
+            }
+
+            Ok(Some(session))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -160,6 +216,7 @@ impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize> Clone
     fn clone(&self) -> Self {
         Self {
             implementation: self.implementation.clone(),
+            expiry_strategy: self.expiry_strategy,
             data: self.data,
         }
     }
@@ -168,7 +225,14 @@ impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize> Clone
 /// This is the backend-facing interface of the session store.
 /// It defines simple [CRUD]-methods on sessions.
 ///
-/// The session id is expected to be the primary key, uniquely identifying a session.
+/// Sessions are identified by up to two session ids (`current_id` and `previous_id`) to handle session renewal under concurrent requests.
+/// Otherwise, the following may happen:
+///  * The client sends requests `A` and `B` with session id `X`.
+///  * We handle request `A`, renewing the session id to `Y`.
+///  * Then we handle request `B`. But request `B` was sent with the old session id `X`, so it now fails.
+///
+/// The session store must ensure that there is never any overlap between the ids,
+/// i.e. the multiset of all current and previous ids must contain each id at most once.
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
@@ -178,28 +242,41 @@ pub trait SessionStoreImplementation<Data> {
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
     const MAXIMUM_RETRIES_ON_ID_COLLISION: Option<u8>;
 
-    /// Create a session with the given `id`, `expiry` and `data`.
+    /// Create a session with the given `current_id`, `expiry` and `data`.
+    /// The `previous_id` stays unset.
     async fn create_session(
         &mut self,
-        id: &SessionId,
-        expiry: &Option<DateTime<Utc>>,
+        current_id: &SessionId,
+        expiry: &SessionExpiry,
         data: &Data,
     ) -> Result<WriteSessionResult>;
 
     /// Read the session with the given `id`.
+    /// This must return the session that either has `previous_id == id` or `current_id == id`.
+    /// Older session ids must not be considered.
     async fn read_session(&self, id: &SessionId) -> Result<Option<Session<Data>>>;
 
-    /// Update the session with id `old_id`, replacing `old_id` with `new_id` and updating `expiry` and `data`.
+    /// Update a session with new ids, data and expiry.
+    ///
+    /// This method must be implemented as follows:
+    ///  1. Find a session `A` identified by the given `previous_id`. The session must have either `previous_id == id` or `current_id == id`.
+    ///  2. Set `A.current_id = current_id` and `A.previous_id = previous_id`. Optionally, remove `A`'s association with `deletable_id`.
+    ///  3. Set `A.expiry = expiry` and `A.data = data`.
     async fn update_session(
         &mut self,
-        old_id: &SessionId,
-        new_id: &SessionId,
-        expiry: &Option<DateTime<Utc>>,
+        current_id: &SessionId,
+        previous_id: &SessionId,
+        deletable_id: &Option<SessionId>,
+        expiry: &SessionExpiry,
         data: &Data,
     ) -> Result<WriteSessionResult>;
 
-    /// Delete the session with the given `id`.
-    async fn delete_session(&mut self, id: &SessionId) -> Result<()>;
+    /// Delete the session with the given `current_id` and optionally `previous_id`.
+    async fn delete_session(
+        &mut self,
+        current_id: &SessionId,
+        previous_id: &Option<SessionId>,
+    ) -> Result<()>;
 
     /// Delete all sessions in the store.
     async fn clear(&mut self) -> Result<()>;
@@ -234,7 +311,7 @@ pub enum SessionCookieCommand {
         /// The value of the session cookie.
         cookie_value: String,
         /// The expiry time of the session cookie.
-        expiry: Option<DateTime<Utc>>,
+        expiry: SessionExpiry,
     },
     /// Delete the session cookie.
     Delete,
