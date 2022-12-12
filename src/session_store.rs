@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 ///
 /// This is the user-facing interface of the session store.
 /// It abstracts over CRUD-based database operations on sessions,
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SessionStore<Data, Implementation, const COOKIE_LENGTH: usize = 64> {
     implementation: Implementation,
     data: PhantomData<Data>,
@@ -147,6 +147,20 @@ impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE
             // the client will not purposefully send us an expired session cookie, so only in the unlikely
             // event that the session expires while being transmitted this will actually be triggered.
             .filter(|session| !session.is_expired()))
+    }
+}
+
+impl<
+        Data,
+        Implementation: SessionStoreImplementation<Data> + Clone,
+        const COOKIE_LENGTH: usize,
+    > Clone for SessionStore<Data, Implementation, COOKIE_LENGTH>
+{
+    fn clone(&self) -> Self {
+        Self {
+            implementation: self.implementation.clone(),
+            data: self.data,
+        }
     }
 }
 
