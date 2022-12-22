@@ -1,20 +1,27 @@
 use crate::session::{SessionId, SessionState};
-use crate::{Result, Session, SessionExpiry};
+use crate::session_store::cookie_generator::SessionCookieGenerator;
+use crate::{DefaultSessionCookieGenerator, Result, Session, SessionExpiry};
 use anyhow::Error;
 use async_trait::async_trait;
 use chrono::Duration;
 use chrono::Utc;
-use rand::distributions::{Alphanumeric, DistString};
-use rand::Rng;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+
+pub(crate) mod cookie_generator;
 
 /// An async session store.
 ///
 /// This is the "front-end" interface of the session store.
 #[derive(Debug)]
-pub struct SessionStore<Data, Implementation, const COOKIE_LENGTH: usize = 64> {
+pub struct SessionStore<
+    Data,
+    Implementation,
+    const COOKIE_LENGTH: usize = 64,
+    CookieGenerator = DefaultSessionCookieGenerator<COOKIE_LENGTH>,
+> {
     implementation: Implementation,
+    cookie_generator: CookieGenerator,
     expiry_strategy: SessionRenewalStrategy,
     data: PhantomData<Data>,
 }
@@ -37,40 +44,60 @@ pub enum SessionRenewalStrategy {
     },
 }
 
-/// Generate a random cookie.
-fn generate_cookie<const COOKIE_LENGTH: usize>(rng: &mut impl Rng) -> String {
-    let mut cookie = String::new();
-    Alphanumeric.append_string(rng, &mut cookie, COOKIE_LENGTH);
-    cookie
+impl<Data, Implementation, CookieGenerator, const COOKIE_LENGTH: usize>
+    SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+{
+    /// Consume the `SessionStore` and return the wrapped `Implementation`.
+    pub fn into_inner(self) -> Implementation {
+        self.implementation
+    }
 }
 
-impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH: usize>
-    SessionStore<Data, Implementation, COOKIE_LENGTH>
+impl<Data, Implementation, const COOKIE_LENGTH: usize>
+    SessionStore<Data, Implementation, COOKIE_LENGTH, DefaultSessionCookieGenerator<COOKIE_LENGTH>>
 {
-    /// Create a new session store with the given implementation.
-    ///
-    /// The `session_time_to_live` is the time-to-live set for every newly created or updated session.
-    /// The `minimum_session_renewal_interval` is the minimum time span that needs to pass before
-    /// a session is automatically renewed with a new expiry time.
-    /// Set this to some reasonable length to avoid renewing the session on every request.
+    /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new(implementation: Implementation, expiry_strategy: SessionRenewalStrategy) -> Self {
         Self {
             implementation,
+            cookie_generator: Default::default(),
             expiry_strategy,
             data: Default::default(),
         }
     }
+}
 
+impl<Data, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
+    SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+{
+    /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
+    pub fn new_with_cookie_generator(
+        implementation: Implementation,
+        cookie_generator: CookieGenerator,
+        expiry_strategy: SessionRenewalStrategy,
+    ) -> Self {
+        Self {
+            implementation,
+            cookie_generator,
+            expiry_strategy,
+            data: Default::default(),
+        }
+    }
+}
+
+impl<
+        Data,
+        Implementation: SessionStoreImplementation<Data>,
+        const COOKIE_LENGTH: usize,
+        CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
+    > SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+{
     /// Store a session in the storage backend.
     /// If the session is marked for deletion, this method deletes the session.
     ///
     /// If the session cookie requires to be updated, because the session data or expiry changed,
     /// then a [SessionCookieCommand] is returned.
-    pub async fn store_session(
-        &mut self,
-        session: Session<Data>,
-        rng: &mut impl Rng,
-    ) -> Result<SessionCookieCommand> {
+    pub async fn store_session(&mut self, session: Session<Data>) -> Result<SessionCookieCommand> {
         if matches!(
             &session.state,
             SessionState::NewChanged { .. }
@@ -81,7 +108,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                 Implementation::MAXIMUM_RETRIES_ON_ID_COLLISION
             {
                 for _ in 0..maximum_retries_on_collision {
-                    match self.try_store_session(&session, rng).await? {
+                    match self.try_store_session(&session).await? {
                         WriteSessionResult::Ok(command) => return Ok(command),
                         WriteSessionResult::SessionIdExists => { /* continue trying */ }
                     }
@@ -92,7 +119,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                 ))
             } else {
                 loop {
-                    match self.try_store_session(&session, rng).await? {
+                    match self.try_store_session(&session).await? {
                         WriteSessionResult::Ok(command) => return Ok(command),
                         WriteSessionResult::SessionIdExists => { /* continue trying */ }
                     }
@@ -106,11 +133,10 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     async fn try_store_session(
         &mut self,
         session: &Session<Data>,
-        rng: &mut impl Rng,
     ) -> Result<WriteSessionResult<SessionCookieCommand>> {
         match &session.state {
             SessionState::NewChanged { expiry, data } => {
-                let cookie_value = generate_cookie::<COOKIE_LENGTH>(rng);
+                let cookie_value = self.cookie_generator.generate_cookie();
                 let id = SessionId::from_cookie_value(&cookie_value);
                 Ok(self
                     .implementation
@@ -127,7 +153,7 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
                 expiry,
                 data,
             } => {
-                let cookie_value = generate_cookie::<COOKIE_LENGTH>(rng);
+                let cookie_value = self.cookie_generator.generate_cookie();
                 let current_id = SessionId::from_cookie_value(&cookie_value);
                 Ok(self
                     .implementation
@@ -160,8 +186,12 @@ impl<Data, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH
     }
 }
 
-impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE_LENGTH: usize>
-    SessionStore<Data, Implementation, COOKIE_LENGTH>
+impl<
+        Data: Debug,
+        Implementation: SessionStoreImplementation<Data>,
+        const COOKIE_LENGTH: usize,
+        CookieGenerator,
+    > SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     /// Get a session from the storage backend.
     ///
@@ -210,12 +240,13 @@ impl<Data: Debug, Implementation: SessionStoreImplementation<Data>, const COOKIE
     }
 }
 
-impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize> Clone
-    for SessionStore<Data, Implementation, COOKIE_LENGTH>
+impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
+    for SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
             implementation: self.implementation.clone(),
+            cookie_generator: self.cookie_generator.clone(),
             expiry_strategy: self.expiry_strategy,
             data: self.data,
         }
@@ -304,7 +335,7 @@ impl<OkData> WriteSessionResult<OkData> {
 }
 
 /// Indicates if the client's session cookie should be updated.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SessionCookieCommand {
     /// Set or update the session cookie.
     Set {

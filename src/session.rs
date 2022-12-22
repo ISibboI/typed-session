@@ -66,6 +66,17 @@ pub type SessionIdType = [u8; blake3::OUT_LEN];
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
+impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+    /// Extract the optionally associated data and expiry while consuming the session.
+    ///
+    /// **This function is supposed to be used in tests only.**
+    /// This loses the association of the data to the actual session, making it useless for most
+    /// purposes.
+    pub fn into_data_expiry_pair(self) -> (Option<Data>, Option<SessionExpiry>) {
+        self.state.into_data_expiry_pair()
+    }
+}
+
 impl<Data: Default, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Create a new session with default data. Does not set an expiry.
     /// Using this method does not mark the session as changed, i.e. it will be silently dropped if
@@ -197,7 +208,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Generates a new id and cookie for this session.
     pub fn regenerate(&mut self) {
         // Calling this marks the state as changed.
-        self.state.data_mut();
+        self.state.change();
     }
 
     /// Updates the expiry timestamp of this session.
@@ -356,6 +367,18 @@ impl<Data> SessionState<Data> {
     fn is_deleted(&self) -> bool {
         matches!(self, Self::Deleted { .. } | Self::NewDeleted)
     }
+
+    fn into_data_expiry_pair(self) -> (Option<Data>, Option<SessionExpiry>) {
+        match self {
+            SessionState::NewUnchanged { data } => (Some(data), None),
+            SessionState::NewChanged { data, expiry }
+            | SessionState::Unchanged { data, expiry, .. }
+            | SessionState::Changed { data, expiry, .. } => (Some(data), Some(expiry)),
+            SessionState::Deleted { .. } | SessionState::NewDeleted | SessionState::Invalid => {
+                (None, None)
+            }
+        }
+    }
 }
 
 impl<Data: Debug> SessionState<Data> {
@@ -447,14 +470,14 @@ impl<Data: Debug> SessionState<Data> {
                 *self = Self::NewDeleted;
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, previous_id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged { current_id, previous_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
                 *self = Self::Deleted {
                     current_id,
                     previous_id,
                 };
             }
             Self::Changed { .. } => {
-                let Self::Changed { previous_id, deletable_id, .. } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Changed { previous_id, deletable_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
                 *self = Self::Deleted {
                     current_id: previous_id,
                     previous_id: deletable_id,
@@ -470,7 +493,9 @@ impl<Data: Debug> SessionState<Data> {
 
 impl SessionId {
     /// Applies a cryptographic hash function on a cookie value to obtain the session id for that cookie.
-    pub(crate) fn from_cookie_value(cookie_value: &str) -> Self {
+    ///
+    /// This is automatically done by the [SessionStore], and this function is only public for test purposes.
+    pub fn from_cookie_value(cookie_value: &str) -> Self {
         // The original code used base64 encoded binary ids of length of a multiple of the blake3 block size.
         // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.
         let hash = blake3::hash(cookie_value.as_bytes());

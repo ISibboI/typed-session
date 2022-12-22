@@ -94,8 +94,13 @@ mod memory_store;
 mod session;
 mod session_store;
 
-pub use memory_store::MemoryStore;
+pub use memory_store::{
+    DefaultLogger, MemoryStore, MemoryStoreOperationLogger, NoLogger, Operation,
+};
 pub use session::{Session, SessionExpiry, SessionId, SessionIdType};
 pub use session_store::{
+    cookie_generator::{
+        DebugSessionCookieGenerator, DefaultSessionCookieGenerator, SessionCookieGenerator,
+    },
     SessionCookieCommand, SessionRenewalStrategy, SessionStore, SessionStoreImplementation,
 };
