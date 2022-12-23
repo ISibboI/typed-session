@@ -1,6 +1,7 @@
 use rand::distributions::{Alphanumeric, DistString};
 use rand::rngs::ThreadRng;
 use std::fmt::Write;
+use tracing::warn;
 
 /// A type with the ability to generate cookies.
 pub trait SessionCookieGenerator<const COOKIE_LENGTH: usize> {
@@ -36,8 +37,15 @@ impl<const COOKIE_LENGTH: usize> SessionCookieGenerator<COOKIE_LENGTH>
     for DebugSessionCookieGenerator<COOKIE_LENGTH>
 {
     fn generate_cookie(&mut self) -> String {
+        warn!("Using debug session cookie generator. This is not secure.");
         let mut cookie = String::new();
-        write!(&mut cookie, "{:0width$}", self.next_index, width = COOKIE_LENGTH).unwrap();
+        write!(
+            &mut cookie,
+            "{:0width$}",
+            self.next_index,
+            width = COOKIE_LENGTH
+        )
+        .unwrap();
         assert_eq!(cookie.len(), COOKIE_LENGTH);
         self.next_index += 1;
         cookie

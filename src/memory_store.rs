@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 pub struct MemoryStore<Data, OperationLogger> {
     session_map: HashMap<SessionId, Arc<SessionBody<Data>>>,
     operation_logger: OperationLogger,
+    maximum_retries_on_id_collision: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +32,9 @@ impl<
         OperationLogger: Send + Sync + MemoryStoreOperationLogger<Data>,
     > SessionStoreImplementation<Data> for MemoryStore<Data, OperationLogger>
 {
-    const MAXIMUM_RETRIES_ON_ID_COLLISION: Option<u8> = None;
+    fn maximum_retries_on_id_collision(&self) -> Option<u32> {
+        self.maximum_retries_on_id_collision
+    }
 
     async fn create_session(
         &mut self,
@@ -82,7 +85,7 @@ impl<
             data,
         );
 
-        if self.session_map.contains_key(previous_id) {
+        if self.session_map.contains_key(current_id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
             if let Some(deletable_id) = deletable_id {
@@ -124,6 +127,14 @@ impl<
 }
 
 impl<Data, OperationLogger> MemoryStore<Data, OperationLogger> {
+    /// Sets the maximum retries on id collision, see [SessionStoreImplementation::maximum_retries_on_id_collision] for details.
+    pub fn set_maximum_retries_on_id_collision(
+        &mut self,
+        maximum_retries_on_id_collision: Option<u32>,
+    ) {
+        self.maximum_retries_on_id_collision = maximum_retries_on_id_collision;
+    }
+
     /// Returns the number of elements in the memory store.
     pub fn len(&self) -> usize {
         self.session_map.len()
@@ -176,6 +187,7 @@ impl<Data> MemoryStore<Data, NoLogger> {
         Self {
             session_map: Default::default(),
             operation_logger: NoLogger,
+            maximum_retries_on_id_collision: None,
         }
     }
 }
@@ -186,6 +198,7 @@ impl<Data> MemoryStore<Data, DefaultLogger<Data>> {
         Self {
             session_map: Default::default(),
             operation_logger: Default::default(),
+            maximum_retries_on_id_collision: None,
         }
     }
 }
@@ -211,6 +224,7 @@ impl<Data, OperationLogger: Default> Default for MemoryStore<Data, OperationLogg
         Self {
             session_map: Default::default(),
             operation_logger: Default::default(),
+            maximum_retries_on_id_collision: None,
         }
     }
 }

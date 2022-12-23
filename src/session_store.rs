@@ -105,7 +105,7 @@ impl<
                 | SessionState::Deleted { .. }
         ) {
             if let Some(maximum_retries_on_collision) =
-                Implementation::MAXIMUM_RETRIES_ON_ID_COLLISION
+                self.implementation.maximum_retries_on_id_collision()
             {
                 for _ in 0..maximum_retries_on_collision {
                     match self.try_store_session(&session).await? {
@@ -271,7 +271,7 @@ pub trait SessionStoreImplementation<Data> {
     /// Writing a session may fail if the id already exists.
     /// This constant indicates how often the caller should retry with different randomly generated ids until it should give up.
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
-    const MAXIMUM_RETRIES_ON_ID_COLLISION: Option<u8>;
+    fn maximum_retries_on_id_collision(&self) -> Option<u32>;
 
     /// Create a session with the given `current_id`, `expiry` and `data`.
     /// The `previous_id` stays unset.
