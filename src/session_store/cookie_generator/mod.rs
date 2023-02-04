@@ -1,5 +1,4 @@
 use rand::distributions::{Alphanumeric, DistString};
-use rand::rngs::ThreadRng;
 use std::fmt::Write;
 use tracing::warn;
 
@@ -10,19 +9,17 @@ pub trait SessionCookieGenerator<const COOKIE_LENGTH: usize> {
 }
 
 /// The default cookie generator with focus on security.
-/// It uses [`ThreadRng`] as a random source and the [`Alphanumeric`] distribution to generate cookie strings.
-/// This gives `log_2(26+26+10) ≥ 5.95` bits of entropy per character.
+/// It uses [`ThreadRng`](rand::rngs::ThreadRng) as a random source and the [`Alphanumeric`] distribution
+/// to generate cookie strings. This gives `log_2(26+26+10) ≥ 5.95` bits of entropy per character.
 #[derive(Debug, Default, Clone)]
-pub struct DefaultSessionCookieGenerator<const COOKIE_LENGTH: usize = 64> {
-    rng: ThreadRng,
-}
+pub struct DefaultSessionCookieGenerator<const COOKIE_LENGTH: usize = 64>;
 
 impl<const COOKIE_LENGTH: usize> SessionCookieGenerator<COOKIE_LENGTH>
     for DefaultSessionCookieGenerator<COOKIE_LENGTH>
 {
     fn generate_cookie(&mut self) -> String {
         let mut cookie = String::new();
-        Alphanumeric.append_string(&mut self.rng, &mut cookie, COOKIE_LENGTH);
+        Alphanumeric.append_string(&mut rand::thread_rng(), &mut cookie, COOKIE_LENGTH);
         cookie
     }
 }
