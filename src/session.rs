@@ -188,7 +188,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
         self.state.data_mut()
     }
 
-    /// mark this session for destruction. the actual session record
+    /// Mark this session for destruction. the actual session record
     /// is not destroyed until the end of this response cycle.
     ///
     /// # Example
@@ -494,7 +494,7 @@ impl<Data: Debug> SessionState<Data> {
 impl SessionId {
     /// Applies a cryptographic hash function on a cookie value to obtain the session id for that cookie.
     ///
-    /// This is automatically done by the [SessionStore], and this function is only public for test purposes.
+    /// This is automatically done by the [`SessionStore`](crate::SessionStore), and this function is only public for test purposes.
     pub fn from_cookie_value(cookie_value: &str) -> Self {
         // The original code used base64 encoded binary ids of length of a multiple of the blake3 block size.
         // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.

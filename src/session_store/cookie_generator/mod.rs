@@ -10,7 +10,7 @@ pub trait SessionCookieGenerator<const COOKIE_LENGTH: usize> {
 }
 
 /// The default cookie generator with focus on security.
-/// It uses [rand::ThreadRng] as a random source and the [Alphanumeric] distribution to generate cookie strings.
+/// It uses [`ThreadRng`] as a random source and the [`Alphanumeric`] distribution to generate cookie strings.
 /// This gives `log_2(26+26+10) ≥ 5.95` bits of entropy per character.
 #[derive(Debug, Default)]
 pub struct DefaultSessionCookieGenerator<const COOKIE_LENGTH: usize = 64> {
