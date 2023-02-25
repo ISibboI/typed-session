@@ -1,5 +1,4 @@
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::mem;
 
@@ -56,7 +55,7 @@ pub(crate) enum SessionState<SessionData> {
 
 /// The expiry of a session.
 /// Either a given date and time, or never.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum SessionExpiry {
     /// The session expires at the given date and time.
     DateTime(DateTime<Utc>),
@@ -68,7 +67,7 @@ pub enum SessionExpiry {
 pub type SessionIdType = [u8; blake3::OUT_LEN];
 
 /// A session id.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
 impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
