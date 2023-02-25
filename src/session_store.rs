@@ -17,13 +17,14 @@ pub(crate) mod cookie_generator;
 /// `SessionData` is the data associated with a session.
 /// `SessionStoreConnection` is the connection to the backend session store.
 /// `COOKIE_LENGTH` is the length of the session cookie, in characters.
+/// The default choice is 32, which is secure.
 /// It should be a multiple of 32, which is the block size of blake3.
 /// `CookieGenerator` is the type used to generate random session cookies.
 #[derive(Debug)]
 pub struct SessionStore<
     SessionData,
     SessionStoreConnection,
-    const COOKIE_LENGTH: usize = 64,
+    const COOKIE_LENGTH: usize = 32,
     CookieGenerator = DefaultSessionCookieGenerator<COOKIE_LENGTH>,
 > {
     implementation: SessionStoreConnection,

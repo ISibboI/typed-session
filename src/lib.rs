@@ -55,8 +55,7 @@
 //!
 //! Sessions are identified by an alphanumeric string including upper and lower case letters from the
 //! English alphabet. This gives `log_2(26+26+10) ≥ 5.95` bits of entropy per character. The default
-//! cookie length is `64`, resulting in `log_2(26+26+10) * 64 ≥ 381` bits of entropy. If a cookie
-//! length of `32` is used, then the cookie contains `log_2(26+26+10) * 32 ≥ 190` bits of entropy.
+//! cookie length is `32`, resulting in `log_2(26+26+10) * 32 ≥ 190` bits of entropy.
 //! [The OWASP® Foundation](https://owasp.org) recommends session ids to have at least
 //! [`128` bits of entropy](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#session-id-entropy).
 //! That is, `64` bits of actual entropy, where a good PRNG is assumed to produce `0.5` bits of entropy per bit.
