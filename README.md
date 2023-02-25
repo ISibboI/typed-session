@@ -4,11 +4,15 @@
 [![Downloads](https://img.shields.io/crates/d/typed-session.svg?style=flat-square)](https://crates.io/crates/typed-session)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/typed-session)
 
+API documentation: [docs.rs](https://docs.rs/typed-session)
+
 Use typed-session to outsource all the low-level details of session management, such as session **expiration** and automatic **renewal** as well as **change tracking** of session data.
 Typed-session was designed to live up to the [The OWASP® Foundation's](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) session **security** standards, with **efficiency** and **usability** in mind.
-Typed session is meant to act as a middleware in a web framework, injecting session information into HTTP requests as required, and storing sessions in a database.
+With typed-session, you can take full advantage of Rust's type system to model your users' sessions.
 
-The documentation is available on [docs.rs](https://docs.rs/typed-session).
+## Compatibility
+
+Typed session acts as a middleware in a web framework, injecting session information into HTTP requests as required, and storing sessions in a database.
 
 Currently, the following **session stores** are available:
 
@@ -18,12 +22,16 @@ Currently, typed-session is integrated into the following **web frameworks**:
 
  * none so far
 
+Typed-session has no dependency to any specific async runtime, and hence can be used with any.
+
 ## Security
 
 We have designed and implemented the crate with security in mind.
 Our design fulfils the requirements stated in [The OWASP® Foundation](https://owasp.org)'s cheat sheet on [session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
 We additionally hash the session ids using the fast and secure hash function [blake3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3) before storing them.
 To mitigate exploitable bugs we use ``#![deny(unsafe_code)]`` to ensure everything is implemented in 100% safe Rust.
+
+For further details, refer to the [crate-level documentation](https://docs.rs/typed-session).
 
 So far, this crate has not been reviewed for security.
 If you have the necessary skills and wish to contribute to an open source project, please get in touch.
