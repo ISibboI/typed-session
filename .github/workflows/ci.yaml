@@ -26,6 +26,11 @@ jobs:
         components: rustfmt, clippy
         override: true
 
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.os }}
+
     - name: Check
       uses: actions-rs/cargo@v1
       with:
