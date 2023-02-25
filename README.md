@@ -31,10 +31,6 @@
       API Docs
     </a>
     <span> | </span>
-    <a href="https://github.com/ISibboI/typed-session/releases">
-      Releases
-    </a>
-    <span> | </span>
     <a href="https://github.com/ISibboI/typed-session/blob/main/.github/CONTRIBUTING.md">
       Contributing
     </a>
