@@ -4,11 +4,14 @@
 [![Downloads](https://img.shields.io/crates/d/typed-session.svg?style=flat-square)](https://crates.io/crates/typed-session)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/typed-session)
 
-## Available session stores
+Use typed-session to outsource all the low-level details of session management, such as session expiration and automatic renewal as well as change tracking of session data.
+Typed-session was designed with security, efficiency and usability in mind.
 
- * none so far
+Currently, the following session stores are available:
 
-## Framework implementations
+ * `MemoryStore`, a debug session store available under the feature flag `memory-store`.
+
+Currently, typed-session is integrated into the following web frameworks:
 
  * none so far
 
