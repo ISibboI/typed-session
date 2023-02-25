@@ -43,11 +43,12 @@ async fn test_store_updated_default_session() {
     assert_eq!(cookie_value, cookie_0);
     let memory_store = store.into_inner();
     // Also check if memory store works correctly here. That is not the main thing we test, but why not.
+    let mut data_expiry_pairs = BTreeSet::new();
+    memory_store.for_each(|session| {
+        data_expiry_pairs.insert(session.into_data_expiry_pair());
+    });
     assert_eq!(
-        memory_store
-            .iter()
-            .map(Session::into_data_expiry_pair)
-            .collect::<BTreeSet<_>>(),
+        data_expiry_pairs,
         BTreeSet::from([(Some(1), Some(SessionExpiry::Never))])
     );
     assert_eq!(

@@ -11,8 +11,13 @@ use std::sync::{Arc, Mutex};
 /// This store stores sessions in memory, without any persistence. It is intended to be used for debugging purposes.
 /// Sessions are deleted only when calling [delete_session](MemoryStore::delete_session)
 /// or when they are expired and [delete_expired_sessions](MemoryStore::delete_expired_sessions) is called.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MemoryStore<SessionData, OperationLogger> {
+    store: Arc<Mutex<MemoryStoreData<SessionData, OperationLogger>>>,
+}
+
+#[derive(Debug)]
+struct MemoryStoreData<SessionData, OperationLogger> {
     session_map: HashMap<SessionId, Arc<SessionBody<SessionData>>>,
     operation_logger: OperationLogger,
     maximum_retries_on_id_collision: Option<u32>,
@@ -33,7 +38,7 @@ impl<
     > SessionStoreConnector<SessionData> for MemoryStore<SessionData, OperationLogger>
 {
     fn maximum_retries_on_id_collision(&self) -> Option<u32> {
-        self.maximum_retries_on_id_collision
+        self.store.lock().unwrap().maximum_retries_on_id_collision
     }
 
     async fn create_session(
@@ -42,13 +47,14 @@ impl<
         expiry: &SessionExpiry,
         data: &SessionData,
     ) -> Result<WriteSessionResult> {
-        self.operation_logger.log_create_session(id, expiry, data);
+        let mut store = self.store.lock().unwrap();
+        store.operation_logger.log_create_session(id, expiry, data);
 
         // replace with `try_insert` once stable #82766
-        if self.session_map.contains_key(id) {
+        if store.session_map.contains_key(id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
-            self.session_map.insert(
+            store.session_map.insert(
                 id.clone(),
                 Arc::new(SessionBody::new_cloned(id, None, expiry, data)),
             );
@@ -57,9 +63,10 @@ impl<
     }
 
     async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>> {
-        self.operation_logger.log_read_session(id);
+        let store = self.store.lock().unwrap();
+        store.operation_logger.log_read_session(id);
 
-        Ok(self.session_map.get(id).map(|body| {
+        Ok(store.session_map.get(id).map(|body| {
             Session::new_from_session_store(
                 body.current_id.clone(),
                 body.previous_id.clone(),
@@ -77,7 +84,8 @@ impl<
         expiry: &SessionExpiry,
         data: &SessionData,
     ) -> Result<WriteSessionResult> {
-        self.operation_logger.log_update_session(
+        let mut store = self.store.lock().unwrap();
+        store.operation_logger.log_update_session(
             current_id,
             previous_id,
             deletable_id,
@@ -85,11 +93,11 @@ impl<
             data,
         );
 
-        if self.session_map.contains_key(current_id) {
+        if store.session_map.contains_key(current_id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
             if let Some(deletable_id) = deletable_id {
-                self.session_map.remove(deletable_id);
+                store.session_map.remove(deletable_id);
             }
 
             let body = Arc::new(SessionBody::new_cloned(
@@ -98,8 +106,8 @@ impl<
                 expiry,
                 data,
             ));
-            self.session_map.insert(current_id.clone(), body.clone());
-            self.session_map.insert(previous_id.clone(), body);
+            store.session_map.insert(current_id.clone(), body.clone());
+            store.session_map.insert(previous_id.clone(), body);
             Ok(WriteSessionResult::Ok(()))
         }
     }
@@ -109,19 +117,22 @@ impl<
         current_id: &SessionId,
         previous_id: &Option<SessionId>,
     ) -> Result<()> {
-        self.operation_logger
+        let mut store = self.store.lock().unwrap();
+        store
+            .operation_logger
             .log_delete_session(current_id, previous_id);
 
-        self.session_map.remove(current_id);
+        store.session_map.remove(current_id);
         if let Some(previous_id) = previous_id.as_ref() {
-            self.session_map.remove(previous_id);
+            store.session_map.remove(previous_id);
         }
         Ok(())
     }
 
     async fn clear(&mut self) -> Result<()> {
-        self.operation_logger.log_clear();
-        self.session_map.clear();
+        let mut store = self.store.lock().unwrap();
+        store.operation_logger.log_clear();
+        store.session_map.clear();
         Ok(())
     }
 }
@@ -132,74 +143,92 @@ impl<SessionData, OperationLogger> MemoryStore<SessionData, OperationLogger> {
         &mut self,
         maximum_retries_on_id_collision: Option<u32>,
     ) {
-        self.maximum_retries_on_id_collision = maximum_retries_on_id_collision;
+        self.store.lock().unwrap().maximum_retries_on_id_collision =
+            maximum_retries_on_id_collision;
     }
 
     /// Returns the number of elements in the memory store.
     pub fn len(&self) -> usize {
-        self.session_map.len()
+        self.store.lock().unwrap().session_map.len()
     }
 
     /// Returns true if the memory store is empty.
     pub fn is_empty(&self) -> bool {
-        self.session_map.is_empty()
+        self.store.lock().unwrap().session_map.is_empty()
     }
 
     /// Deletes all expired sessions.
     pub fn delete_expired_sessions(&mut self) -> Result {
+        let mut store = self.store.lock().unwrap();
         tracing::trace!("Cleaning up memory store...");
         let now = Utc::now();
-        let initial_len = self.session_map.len();
-        self.session_map.retain(|_, body| match body.expiry {
+        let initial_len = store.session_map.len();
+        store.session_map.retain(|_, body| match body.expiry {
             SessionExpiry::DateTime(expiry) => expiry > now,
             SessionExpiry::Never => true,
         });
         tracing::trace!(
             "Deleted {} expired sessions",
-            initial_len - self.session_map.len()
+            initial_len - store.session_map.len()
         );
         Ok(())
     }
 
     /// Consumes the store and returns the logged operations.
-    pub fn into_logger(self) -> OperationLogger {
-        self.operation_logger
+    pub fn into_logger(self) -> OperationLogger
+    where
+        SessionData: Debug,
+        OperationLogger: Debug,
+    {
+        Arc::try_unwrap(self.store)
+            .unwrap()
+            .into_inner()
+            .unwrap()
+            .operation_logger
     }
 }
 
 impl<SessionData: Clone, OperationLogger> MemoryStore<SessionData, OperationLogger> {
     /// Returns an iterator over all sessions in the store.
-    pub fn iter(&self) -> impl '_ + Iterator<Item = Session<SessionData>> {
-        self.session_map.iter().map(|(id, body)| {
-            Session::new_from_session_store(
-                id.clone(),
-                body.previous_id.clone(),
-                body.expiry,
-                body.data.clone(),
-            )
-        })
+    pub fn for_each(&self, f: impl FnMut(Session<SessionData>)) {
+        self.store
+            .lock()
+            .unwrap()
+            .session_map
+            .iter()
+            .map(|(id, body)| {
+                Session::new_from_session_store(
+                    id.clone(),
+                    body.previous_id.clone(),
+                    body.expiry,
+                    body.data.clone(),
+                )
+            })
+            .for_each(f);
     }
 }
 
 impl<SessionData> MemoryStore<SessionData, NoLogger> {
     /// Create a new empty memory store.
     pub fn new() -> Self {
-        Self {
+        MemoryStoreData {
             session_map: Default::default(),
             operation_logger: NoLogger,
             maximum_retries_on_id_collision: None,
         }
+        .into()
     }
 }
 
 impl<SessionData> MemoryStore<SessionData, DefaultLogger<SessionData>> {
     /// Create a new empty memory store with the given logger for logging store operations.
     pub fn new_with_logger() -> Self {
-        Self {
+        MemoryStoreData {
             session_map: Default::default(),
             operation_logger: Default::default(),
             maximum_retries_on_id_collision: None,
         }
+        .into()
     }
 }
 
@@ -221,11 +250,12 @@ impl<SessionData: Clone> SessionBody<SessionData> {
 
 impl<SessionData, OperationLogger: Default> Default for MemoryStore<SessionData, OperationLogger> {
     fn default() -> Self {
-        Self {
+        MemoryStoreData {
             session_map: Default::default(),
             operation_logger: Default::default(),
             maximum_retries_on_id_collision: None,
         }
+        .into()
     }
 }
 
@@ -381,6 +411,24 @@ impl<SessionData> Default for DefaultLogger<SessionData> {
     fn default() -> Self {
         Self {
             log: Mutex::new(Default::default()),
+        }
+    }
+}
+
+impl<SessionData, OperationLogger> Clone for MemoryStore<SessionData, OperationLogger> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+        }
+    }
+}
+
+impl<SessionData, OperationLogger> From<MemoryStoreData<SessionData, OperationLogger>>
+    for MemoryStore<SessionData, OperationLogger>
+{
+    fn from(store: MemoryStoreData<SessionData, OperationLogger>) -> Self {
+        Self {
+            store: Arc::new(Mutex::new(store)),
         }
     }
 }

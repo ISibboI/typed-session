@@ -68,7 +68,10 @@ impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize>
     >
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
-    pub fn new(implementation: SessionStoreConnection, expiry_strategy: SessionRenewalStrategy) -> Self {
+    pub fn new(
+        implementation: SessionStoreConnection,
+        expiry_strategy: SessionRenewalStrategy,
+    ) -> Self {
         Self {
             implementation,
             cookie_generator: Default::default(),
@@ -98,7 +101,7 @@ impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize, CookieGene
 
 impl<
         SessionData,
-    SessionStoreConnection: SessionStoreConnector<SessionData>,
+        SessionStoreConnection: SessionStoreConnector<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
     > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
@@ -202,7 +205,7 @@ impl<
 
 impl<
         SessionData: Debug,
-    SessionStoreConnection: SessionStoreConnector<SessionData>,
+        SessionStoreConnection: SessionStoreConnector<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator,
     > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
@@ -254,8 +257,12 @@ impl<
     }
 }
 
-impl<SessionData, SessionStoreConnection: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
-    for SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+impl<
+        SessionData,
+        SessionStoreConnection: Clone,
+        const COOKIE_LENGTH: usize,
+        CookieGenerator: Clone,
+    > Clone for SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
@@ -270,6 +277,12 @@ impl<SessionData, SessionStoreConnection: Clone, const COOKIE_LENGTH: usize, Coo
 /// This is the backend-facing interface of the session store.
 /// It defines simple [CRUD]-methods on sessions.
 ///
+/// This type must be `Clone` and thread safe (i.e. `Send` and `Sync`).
+/// Different cloned implementations of this trait should not block each other, but should allow
+/// concurrent queries through the different instances.
+/// This is to allow the whole [`SessionStore`] to be cloned and used concurrently, e.g. by a
+/// parallel or at least concurrent server application.
+///
 /// Sessions are identified by up to two session ids (`current_id` and `previous_id`) to handle session renewal under concurrent requests.
 /// Otherwise, the following may happen:
 ///  * The client sends requests `A` and `B` with session id `X`.
@@ -281,7 +294,7 @@ impl<SessionData, SessionStoreConnection: Clone, const COOKIE_LENGTH: usize, Coo
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
-pub trait SessionStoreConnector<SessionData> {
+pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     /// Writing a session may fail if the id already exists.
     /// This constant indicates how often the caller should retry with different randomly generated ids until it should give up.
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
