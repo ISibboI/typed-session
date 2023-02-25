@@ -9,9 +9,11 @@ env:
 
 jobs:
   feature_specific:
+    needs: feature-agnostic
     name: Check specific feature set
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rust: [1.65.0, stable, beta, nightly]

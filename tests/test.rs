@@ -1,3 +1,5 @@
+#![cfg(feature = "memory-store")]
+
 use std::collections::BTreeSet;
 use typed_session::{
     DebugSessionCookieGenerator, MemoryStore, Operation, Session, SessionCookieCommand,
