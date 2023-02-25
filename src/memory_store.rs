@@ -1,5 +1,5 @@
 use crate::session_store::WriteSessionResult;
-use crate::{Result, Session, SessionExpiry, SessionId, SessionStoreImplementation};
+use crate::{Result, Session, SessionExpiry, SessionId, SessionStoreConnector};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ struct SessionBody<SessionData> {
 impl<
         SessionData: Send + Sync + Clone,
         OperationLogger: Send + Sync + MemoryStoreOperationLogger<SessionData>,
-    > SessionStoreImplementation<SessionData> for MemoryStore<SessionData, OperationLogger>
+    > SessionStoreConnector<SessionData> for MemoryStore<SessionData, OperationLogger>
 {
     fn maximum_retries_on_id_collision(&self) -> Option<u32> {
         self.maximum_retries_on_id_collision
@@ -127,7 +127,7 @@ impl<
 }
 
 impl<SessionData, OperationLogger> MemoryStore<SessionData, OperationLogger> {
-    /// Sets the maximum retries on id collision, see [SessionStoreImplementation::maximum_retries_on_id_collision] for details.
+    /// Sets the maximum retries on id collision, see [SessionStoreConnector::maximum_retries_on_id_collision] for details.
     pub fn set_maximum_retries_on_id_collision(
         &mut self,
         maximum_retries_on_id_collision: Option<u32>,

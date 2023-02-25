@@ -98,7 +98,7 @@ impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize, CookieGene
 
 impl<
         SessionData,
-    SessionStoreConnection: SessionStoreImplementation<SessionData>,
+    SessionStoreConnection: SessionStoreConnector<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
     > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
@@ -202,7 +202,7 @@ impl<
 
 impl<
         SessionData: Debug,
-    SessionStoreConnection: SessionStoreImplementation<SessionData>,
+    SessionStoreConnection: SessionStoreConnector<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator,
     > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
@@ -281,7 +281,7 @@ impl<SessionData, SessionStoreConnection: Clone, const COOKIE_LENGTH: usize, Coo
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
-pub trait SessionStoreImplementation<SessionData> {
+pub trait SessionStoreConnector<SessionData> {
     /// Writing a session may fail if the id already exists.
     /// This constant indicates how often the caller should retry with different randomly generated ids until it should give up.
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
