@@ -45,6 +45,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rust: [1.65.0, stable, beta, nightly]
+        feature-args: ["--all-features"]
 
     steps:
       - uses: actions/checkout@master
@@ -65,13 +66,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command:  check
-          args: --all --benches --bins --examples --tests --all-features
+          args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --all-features
+          args: ${{ matrix.feature-args }} --all
 
       - name: Docs
         uses: actions-rs/cargo@v1
@@ -88,4 +89,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets --all-features
+          args: ${{ matrix.feature-args }} --all-targets
