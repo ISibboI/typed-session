@@ -9,10 +9,11 @@ use std::mem;
 ///
 /// `SessionData` is the data associated with a session.
 /// `COOKIE_LENGTH` is the length of the session cookie, in characters.
+/// The default choice is 32, which is secure.
 /// It should be a multiple of 32, which is the block size of blake3.
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct Session<SessionData, const COOKIE_LENGTH: usize = 64> {
+pub struct Session<SessionData, const COOKIE_LENGTH: usize = 32> {
     pub(crate) state: SessionState<SessionData>,
 }
 
@@ -503,7 +504,8 @@ impl SessionId {
     /// This is automatically done by the [`SessionStore`](crate::SessionStore), and this function is only public for test purposes.
     pub fn from_cookie_value(cookie_value: &str) -> Self {
         // The original code used base64 encoded binary ids of length of a multiple of the blake3 block size.
-        // We do the same but with alphanumerical ids with a length multiple of the blake3 block size.
+        // We do the same, but instead of base64 encoding a binary ids, we use normal alphanumerical ids with a length multiple of the blake3 block size.
+        // This gives less entropy, but still more than enough to be secure (see crate-level documentation).
         let hash = blake3::hash(cookie_value.as_bytes());
         Self(Box::new(hash.into()))
     }

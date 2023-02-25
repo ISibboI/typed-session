@@ -7,7 +7,7 @@ use typed_session::{
 /// If a new session is created but never mutated, then no cookie is set and the session is not stored in the session store.
 #[async_std::test]
 async fn test_dont_store_default_session() {
-    let mut store: SessionStore<(), _, 64, _> = SessionStore::new_with_cookie_generator(
+    let mut store: SessionStore<(), _, 32, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -26,10 +26,10 @@ async fn test_dont_store_default_session() {
 /// If a new session is created and mutated, then a cookie is set and the session is stored in the session store.
 #[async_std::test]
 async fn test_store_updated_default_session() {
-    let mut cookie_generator = DebugSessionCookieGenerator::<64>::default();
+    let mut cookie_generator = DebugSessionCookieGenerator::<32>::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
-    let mut store: SessionStore<i32, _, 64, _> = SessionStore::new_with_cookie_generator(
+    let mut store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -64,10 +64,10 @@ async fn test_store_updated_default_session() {
 /// If a session is loaded from the store and stored without change, then the cookie is not updated and the session is not updated in the session store.
 #[async_std::test]
 async fn test_dont_update_unchanged_session() {
-    let mut cookie_generator = DebugSessionCookieGenerator::<64>::default();
+    let mut cookie_generator = DebugSessionCookieGenerator::<32>::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
-    let mut store: SessionStore<i32, _, 64, _> = SessionStore::new_with_cookie_generator(
+    let mut store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -99,10 +99,10 @@ async fn test_dont_update_unchanged_session() {
 /// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
 #[async_std::test]
 async fn test_update_changed_session() {
-    let mut cookie_generator = DebugSessionCookieGenerator::<64>::default();
+    let mut cookie_generator = DebugSessionCookieGenerator::<32>::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
-    let mut store: SessionStore<i32, _, 64, _> = SessionStore::new_with_cookie_generator(
+    let mut store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,

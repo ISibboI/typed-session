@@ -12,7 +12,7 @@ pub trait SessionCookieGenerator<const COOKIE_LENGTH: usize> {
 /// It uses [`ThreadRng`](rand::rngs::ThreadRng) as a random source and the [`Alphanumeric`] distribution
 /// to generate cookie strings. This gives `log_2(26+26+10) ≥ 5.95` bits of entropy per character.
 #[derive(Debug, Default, Clone)]
-pub struct DefaultSessionCookieGenerator<const COOKIE_LENGTH: usize = 64>;
+pub struct DefaultSessionCookieGenerator<const COOKIE_LENGTH: usize = 32>;
 
 impl<const COOKIE_LENGTH: usize> SessionCookieGenerator<COOKIE_LENGTH>
     for DefaultSessionCookieGenerator<COOKIE_LENGTH>
