@@ -14,7 +14,7 @@
 //! The [`Session`](Session) type has a type parameter `SessionData` that decides what session-specific
 //! data is stored in the database.
 //!
-//! On the "back-end" of this crate, the trait [`SessionStoreImplementation`](SessionStoreImplementation)
+//! On the "back-end" of this crate, the trait [`SessionStoreImplementation`](SessionStoreConnector)
 //! provides a simple [*CRUD*](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)-based
 //! interface for handling sessions in a database.
 //!
@@ -130,5 +130,5 @@ pub use session_store::{
     cookie_generator::{
         DebugSessionCookieGenerator, DefaultSessionCookieGenerator, SessionCookieGenerator,
     },
-    SessionCookieCommand, SessionRenewalStrategy, SessionStore, SessionStoreImplementation,
+    SessionCookieCommand, SessionRenewalStrategy, SessionStore, SessionStoreConnector,
 };
