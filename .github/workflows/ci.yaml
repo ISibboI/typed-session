@@ -6,9 +6,10 @@ on:
 
 env:
   RUSTFLAGS: -Dwarnings
+  MSRV: 1.65.0
 
 jobs:
-  precheck:
+  precheck_default:
     name: Check default
     runs-on: ${{ matrix.os }}
     strategy:
@@ -16,7 +17,6 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
-        feature-args: ["", "--all-features"]
 
     steps:
       - uses: actions/checkout@master
@@ -37,48 +37,40 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command:  check
-          args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests --lib
+          args: --all --bins --examples --lib
 
-  check_features:
-    needs: precheck
-    name: Check specific feature set
+  precheck_all_features:
+    name: Check all features
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
-        feature-args: [""]
 
     steps:
-    - uses: actions/checkout@master
+      - uses: actions/checkout@master
 
-    - name: Install ${{ matrix.rust }}
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-        override: true
+      - name: Install ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+          override: true
 
-    - name: Rust cache
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ matrix.os }}
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
-    - name: Check
-      uses: actions-rs/cargo@v1
-      with:
-        command:  check
-        args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests --lib
-
-    - name: Test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: ${{ matrix.feature-args }} --all
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command:  check
+          args: --all-features --all --benches --bins --examples --tests --lib
 
   check_platform_compatibility:
-    needs: precheck
+    needs: [precheck_default, precheck_all_features]
     name: Check platform compatibility
     runs-on: ${{ matrix.os }}
     strategy:
@@ -108,45 +100,14 @@ jobs:
           command:  check
           args: --all-features --all --benches --bins --examples --tests --lib
 
-  check_rust_compatibility:
-    needs: precheck
-    name: Check Rust compatibility
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable]
-
-    steps:
-      - uses: actions/checkout@master
-
-      - name: Install ${{ matrix.rust }}
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
-          override: true
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.os }}
-
-      - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command:  check
-          args: --all-features --all --benches --bins --examples --tests --lib
-
   detailed_tests:
-    needs: precheck
-    name: Check, test, docs, format and lint all features
+    needs: [precheck_default, precheck_all_features]
+    name: Check, test, doc, format and lint with all features
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable]
+        rust: ["$MSRV", stable, beta, nightly]
 
     steps:
       - uses: actions/checkout@master
