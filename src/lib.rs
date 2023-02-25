@@ -11,8 +11,8 @@
 //!
 //! On the "front-end" of this crate, the [`SessionStore`](SessionStore) provides a simple interface
 //! to load and store sessions given an identifying string, typically the value of a cookie.
-//! The [`Session`](Session) type has a type parameter `Data` that decides what session-specific data
-//! is stored in the database.
+//! The [`Session`](Session) type has a type parameter `SessionData` that decides what session-specific
+//! data is stored in the database.
 //!
 //! On the "back-end" of this crate, the trait [`SessionStoreImplementation`](SessionStoreImplementation)
 //! provides a simple [*CRUD*](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)-based

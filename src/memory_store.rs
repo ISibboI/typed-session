@@ -12,25 +12,25 @@ use std::sync::{Arc, Mutex};
 /// Sessions are deleted only when calling [delete_session](MemoryStore::delete_session)
 /// or when they are expired and [delete_expired_sessions](MemoryStore::delete_expired_sessions) is called.
 #[derive(Debug, Clone)]
-pub struct MemoryStore<Data, OperationLogger> {
-    session_map: HashMap<SessionId, Arc<SessionBody<Data>>>,
+pub struct MemoryStore<SessionData, OperationLogger> {
+    session_map: HashMap<SessionId, Arc<SessionBody<SessionData>>>,
     operation_logger: OperationLogger,
     maximum_retries_on_id_collision: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
-struct SessionBody<Data> {
+struct SessionBody<SessionData> {
     current_id: SessionId,
     previous_id: Option<SessionId>,
     expiry: SessionExpiry,
-    data: Data,
+    data: SessionData,
 }
 
 #[async_trait]
 impl<
-        Data: Send + Sync + Clone,
-        OperationLogger: Send + Sync + MemoryStoreOperationLogger<Data>,
-    > SessionStoreImplementation<Data> for MemoryStore<Data, OperationLogger>
+        SessionData: Send + Sync + Clone,
+        OperationLogger: Send + Sync + MemoryStoreOperationLogger<SessionData>,
+    > SessionStoreImplementation<SessionData> for MemoryStore<SessionData, OperationLogger>
 {
     fn maximum_retries_on_id_collision(&self) -> Option<u32> {
         self.maximum_retries_on_id_collision
@@ -40,7 +40,7 @@ impl<
         &mut self,
         id: &SessionId,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) -> Result<WriteSessionResult> {
         self.operation_logger.log_create_session(id, expiry, data);
 
@@ -56,7 +56,7 @@ impl<
         }
     }
 
-    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<Data>>> {
+    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>> {
         self.operation_logger.log_read_session(id);
 
         Ok(self.session_map.get(id).map(|body| {
@@ -75,7 +75,7 @@ impl<
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) -> Result<WriteSessionResult> {
         self.operation_logger.log_update_session(
             current_id,
@@ -126,7 +126,7 @@ impl<
     }
 }
 
-impl<Data, OperationLogger> MemoryStore<Data, OperationLogger> {
+impl<SessionData, OperationLogger> MemoryStore<SessionData, OperationLogger> {
     /// Sets the maximum retries on id collision, see [SessionStoreImplementation::maximum_retries_on_id_collision] for details.
     pub fn set_maximum_retries_on_id_collision(
         &mut self,
@@ -167,9 +167,9 @@ impl<Data, OperationLogger> MemoryStore<Data, OperationLogger> {
     }
 }
 
-impl<Data: Clone, OperationLogger> MemoryStore<Data, OperationLogger> {
+impl<SessionData: Clone, OperationLogger> MemoryStore<SessionData, OperationLogger> {
     /// Returns an iterator over all sessions in the store.
-    pub fn iter(&self) -> impl '_ + Iterator<Item = Session<Data>> {
+    pub fn iter(&self) -> impl '_ + Iterator<Item = Session<SessionData>> {
         self.session_map.iter().map(|(id, body)| {
             Session::new_from_session_store(
                 id.clone(),
@@ -181,7 +181,7 @@ impl<Data: Clone, OperationLogger> MemoryStore<Data, OperationLogger> {
     }
 }
 
-impl<Data> MemoryStore<Data, NoLogger> {
+impl<SessionData> MemoryStore<SessionData, NoLogger> {
     /// Create a new empty memory store.
     pub fn new() -> Self {
         Self {
@@ -192,7 +192,7 @@ impl<Data> MemoryStore<Data, NoLogger> {
     }
 }
 
-impl<Data> MemoryStore<Data, DefaultLogger<Data>> {
+impl<SessionData> MemoryStore<SessionData, DefaultLogger<SessionData>> {
     /// Create a new empty memory store with the given logger for logging store operations.
     pub fn new_with_logger() -> Self {
         Self {
@@ -203,12 +203,12 @@ impl<Data> MemoryStore<Data, DefaultLogger<Data>> {
     }
 }
 
-impl<Data: Clone> SessionBody<Data> {
+impl<SessionData: Clone> SessionBody<SessionData> {
     fn new_cloned(
         current_id: &SessionId,
         previous_id: Option<&SessionId>,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) -> Self {
         Self {
             current_id: current_id.clone(),
@@ -219,7 +219,7 @@ impl<Data: Clone> SessionBody<Data> {
     }
 }
 
-impl<Data, OperationLogger: Default> Default for MemoryStore<Data, OperationLogger> {
+impl<SessionData, OperationLogger: Default> Default for MemoryStore<SessionData, OperationLogger> {
     fn default() -> Self {
         Self {
             session_map: Default::default(),
@@ -231,9 +231,9 @@ impl<Data, OperationLogger: Default> Default for MemoryStore<Data, OperationLogg
 
 /// A logger for operations conducted by the memory store.
 /// This is intended to be used for debug purposes.
-pub trait MemoryStoreOperationLogger<Data> {
+pub trait MemoryStoreOperationLogger<SessionData> {
     /// Log a create session operation.
-    fn log_create_session(&mut self, id: &SessionId, expiry: &SessionExpiry, data: &Data);
+    fn log_create_session(&mut self, id: &SessionId, expiry: &SessionExpiry, data: &SessionData);
 
     /// Log a read session operation.
     fn log_read_session(&self, id: &SessionId);
@@ -245,7 +245,7 @@ pub trait MemoryStoreOperationLogger<Data> {
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     );
 
     /// Log a delete session operation.
@@ -259,8 +259,13 @@ pub trait MemoryStoreOperationLogger<Data> {
 #[derive(Debug, Copy, Clone)]
 pub struct NoLogger;
 
-impl<Data> MemoryStoreOperationLogger<Data> for NoLogger {
-    fn log_create_session(&mut self, _id: &SessionId, _expiry: &SessionExpiry, _data: &Data) {
+impl<SessionData> MemoryStoreOperationLogger<SessionData> for NoLogger {
+    fn log_create_session(
+        &mut self,
+        _id: &SessionId,
+        _expiry: &SessionExpiry,
+        _data: &SessionData,
+    ) {
         // do nothing
     }
 
@@ -274,7 +279,7 @@ impl<Data> MemoryStoreOperationLogger<Data> for NoLogger {
         _previous_id: &SessionId,
         _deletable_id: &Option<SessionId>,
         _expiry: &SessionExpiry,
-        _data: &Data,
+        _data: &SessionData,
     ) {
         // do nothing
     }
@@ -290,18 +295,18 @@ impl<Data> MemoryStoreOperationLogger<Data> for NoLogger {
 
 /// A logger that stores all logging operations in a `Vec`.
 #[derive(Debug)]
-pub struct DefaultLogger<Data> {
-    log: Mutex<Vec<Operation<Data>>>,
+pub struct DefaultLogger<SessionData> {
+    log: Mutex<Vec<Operation<SessionData>>>,
 }
 
 /// An operation of the memory store.
 #[derive(Debug, Eq, PartialEq)]
 #[allow(missing_docs)]
-pub enum Operation<Data> {
+pub enum Operation<SessionData> {
     CreateSession {
         id: SessionId,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     },
     ReadSession {
         id: SessionId,
@@ -311,7 +316,7 @@ pub enum Operation<Data> {
         previous_id: SessionId,
         deletable_id: Option<SessionId>,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     },
     DeleteSession {
         current_id: SessionId,
@@ -320,8 +325,8 @@ pub enum Operation<Data> {
     Clear,
 }
 
-impl<Data: Clone> MemoryStoreOperationLogger<Data> for DefaultLogger<Data> {
-    fn log_create_session(&mut self, id: &SessionId, expiry: &SessionExpiry, data: &Data) {
+impl<SessionData: Clone> MemoryStoreOperationLogger<SessionData> for DefaultLogger<SessionData> {
+    fn log_create_session(&mut self, id: &SessionId, expiry: &SessionExpiry, data: &SessionData) {
         self.log.lock().unwrap().push(Operation::CreateSession {
             id: id.clone(),
             expiry: *expiry,
@@ -342,7 +347,7 @@ impl<Data: Clone> MemoryStoreOperationLogger<Data> for DefaultLogger<Data> {
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) {
         self.log.lock().unwrap().push(Operation::UpdateSession {
             current_id: current_id.clone(),
@@ -365,14 +370,14 @@ impl<Data: Clone> MemoryStoreOperationLogger<Data> for DefaultLogger<Data> {
     }
 }
 
-impl<Data> DefaultLogger<Data> {
+impl<SessionData> DefaultLogger<SessionData> {
     /// Consume the logger and return the vector of logged operations.
-    pub fn into_inner(self) -> Vec<Operation<Data>> {
+    pub fn into_inner(self) -> Vec<Operation<SessionData>> {
         self.log.into_inner().unwrap()
     }
 }
 
-impl<Data> Default for DefaultLogger<Data> {
+impl<SessionData> Default for DefaultLogger<SessionData> {
     fn default() -> Self {
         Self {
             log: Mutex::new(Default::default()),

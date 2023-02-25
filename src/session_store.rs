@@ -13,9 +13,15 @@ pub(crate) mod cookie_generator;
 /// An async session store.
 ///
 /// This is the "front-end" interface of the session store.
+///
+/// `SessionData` is the data associated with a session.
+/// `SessionStoreConnection` is the connection to the backend session store.
+/// `COOKIE_LENGTH` is the length of the session cookie, in characters.
+/// It should be a multiple of 32, which is the block size of blake3.
+/// `CookieGenerator` is the type used to generate random session cookies.
 #[derive(Debug)]
 pub struct SessionStore<
-    Data,
+    SessionData,
     Implementation,
     const COOKIE_LENGTH: usize = 64,
     CookieGenerator = DefaultSessionCookieGenerator<COOKIE_LENGTH>,
@@ -23,7 +29,7 @@ pub struct SessionStore<
     implementation: Implementation,
     cookie_generator: CookieGenerator,
     expiry_strategy: SessionRenewalStrategy,
-    data: PhantomData<Data>,
+    data: PhantomData<SessionData>,
 }
 
 /// The strategy to renew sessions.
@@ -44,8 +50,8 @@ pub enum SessionRenewalStrategy {
     },
 }
 
-impl<Data, Implementation, CookieGenerator, const COOKIE_LENGTH: usize>
-    SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, Implementation, CookieGenerator, const COOKIE_LENGTH: usize>
+    SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     /// Consume the `SessionStore` and return the wrapped `Implementation`.
     pub fn into_inner(self) -> Implementation {
@@ -53,8 +59,13 @@ impl<Data, Implementation, CookieGenerator, const COOKIE_LENGTH: usize>
     }
 }
 
-impl<Data, Implementation, const COOKIE_LENGTH: usize>
-    SessionStore<Data, Implementation, COOKIE_LENGTH, DefaultSessionCookieGenerator<COOKIE_LENGTH>>
+impl<SessionData, Implementation, const COOKIE_LENGTH: usize>
+    SessionStore<
+        SessionData,
+        Implementation,
+        COOKIE_LENGTH,
+        DefaultSessionCookieGenerator<COOKIE_LENGTH>,
+    >
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new(implementation: Implementation, expiry_strategy: SessionRenewalStrategy) -> Self {
@@ -67,8 +78,8 @@ impl<Data, Implementation, const COOKIE_LENGTH: usize>
     }
 }
 
-impl<Data, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
-    SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
+    SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new_with_cookie_generator(
@@ -86,18 +97,21 @@ impl<Data, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
 }
 
 impl<
-        Data,
-        Implementation: SessionStoreImplementation<Data>,
+        SessionData,
+        Implementation: SessionStoreImplementation<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
-    > SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+    > SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     /// Store a session in the storage backend.
     /// If the session is marked for deletion, this method deletes the session.
     ///
     /// If the session cookie requires to be updated, because the session data or expiry changed,
     /// then a [SessionCookieCommand] is returned.
-    pub async fn store_session(&mut self, session: Session<Data>) -> Result<SessionCookieCommand> {
+    pub async fn store_session(
+        &mut self,
+        session: Session<SessionData>,
+    ) -> Result<SessionCookieCommand> {
         if matches!(
             &session.state,
             SessionState::NewChanged { .. }
@@ -132,7 +146,7 @@ impl<
 
     async fn try_store_session(
         &mut self,
-        session: &Session<Data>,
+        session: &Session<SessionData>,
     ) -> Result<WriteSessionResult<SessionCookieCommand>> {
         match &session.state {
             SessionState::NewChanged { expiry, data } => {
@@ -187,11 +201,11 @@ impl<
 }
 
 impl<
-        Data: Debug,
-        Implementation: SessionStoreImplementation<Data>,
+        SessionData: Debug,
+        Implementation: SessionStoreImplementation<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator,
-    > SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+    > SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     /// Get a session from the storage backend.
     ///
@@ -202,7 +216,7 @@ impl<
     pub async fn load_session(
         &self,
         cookie_value: impl AsRef<str>,
-    ) -> Result<Option<Session<Data>>> {
+    ) -> Result<Option<Session<SessionData>>> {
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
         if let Some(mut session) = self.implementation.read_session(&session_id).await? {
             let now = Utc::now();
@@ -240,8 +254,8 @@ impl<
     }
 }
 
-impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
-    for SessionStore<Data, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, Implementation: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
+    for SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
@@ -267,7 +281,7 @@ impl<Data, Implementation: Clone, const COOKIE_LENGTH: usize, CookieGenerator: C
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
-pub trait SessionStoreImplementation<Data> {
+pub trait SessionStoreImplementation<SessionData> {
     /// Writing a session may fail if the id already exists.
     /// This constant indicates how often the caller should retry with different randomly generated ids until it should give up.
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
@@ -279,13 +293,13 @@ pub trait SessionStoreImplementation<Data> {
         &mut self,
         current_id: &SessionId,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) -> Result<WriteSessionResult>;
 
     /// Read the session with the given `id`.
     /// This must return the session that either has `previous_id == id` or `current_id == id`.
     /// Older session ids must not be considered.
-    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<Data>>>;
+    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>>;
 
     /// Update a session with new ids, data and expiry.
     ///
@@ -299,7 +313,7 @@ pub trait SessionStoreImplementation<Data> {
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
-        data: &Data,
+        data: &SessionData,
     ) -> Result<WriteSessionResult>;
 
     /// Delete the session with the given `current_id` and optionally `previous_id`.
