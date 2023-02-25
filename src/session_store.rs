@@ -22,11 +22,11 @@ pub(crate) mod cookie_generator;
 #[derive(Debug)]
 pub struct SessionStore<
     SessionData,
-    Implementation,
+    SessionStoreConnection,
     const COOKIE_LENGTH: usize = 64,
     CookieGenerator = DefaultSessionCookieGenerator<COOKIE_LENGTH>,
 > {
-    implementation: Implementation,
+    implementation: SessionStoreConnection,
     cookie_generator: CookieGenerator,
     expiry_strategy: SessionRenewalStrategy,
     data: PhantomData<SessionData>,
@@ -50,25 +50,25 @@ pub enum SessionRenewalStrategy {
     },
 }
 
-impl<SessionData, Implementation, CookieGenerator, const COOKIE_LENGTH: usize>
-    SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection, CookieGenerator, const COOKIE_LENGTH: usize>
+    SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
-    /// Consume the `SessionStore` and return the wrapped `Implementation`.
-    pub fn into_inner(self) -> Implementation {
+    /// Consume the `SessionStore` and return the wrapped `SessionStoreConnection`.
+    pub fn into_inner(self) -> SessionStoreConnection {
         self.implementation
     }
 }
 
-impl<SessionData, Implementation, const COOKIE_LENGTH: usize>
+impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize>
     SessionStore<
         SessionData,
-        Implementation,
+        SessionStoreConnection,
         COOKIE_LENGTH,
         DefaultSessionCookieGenerator<COOKIE_LENGTH>,
     >
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
-    pub fn new(implementation: Implementation, expiry_strategy: SessionRenewalStrategy) -> Self {
+    pub fn new(implementation: SessionStoreConnection, expiry_strategy: SessionRenewalStrategy) -> Self {
         Self {
             implementation,
             cookie_generator: Default::default(),
@@ -78,12 +78,12 @@ impl<SessionData, Implementation, const COOKIE_LENGTH: usize>
     }
 }
 
-impl<SessionData, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
-    SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize, CookieGenerator>
+    SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new_with_cookie_generator(
-        implementation: Implementation,
+        implementation: SessionStoreConnection,
         cookie_generator: CookieGenerator,
         expiry_strategy: SessionRenewalStrategy,
     ) -> Self {
@@ -98,10 +98,10 @@ impl<SessionData, Implementation, const COOKIE_LENGTH: usize, CookieGenerator>
 
 impl<
         SessionData,
-        Implementation: SessionStoreImplementation<SessionData>,
+    SessionStoreConnection: SessionStoreImplementation<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
-    > SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
+    > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
     /// Store a session in the storage backend.
     /// If the session is marked for deletion, this method deletes the session.
@@ -202,10 +202,10 @@ impl<
 
 impl<
         SessionData: Debug,
-        Implementation: SessionStoreImplementation<SessionData>,
+    SessionStoreConnection: SessionStoreImplementation<SessionData>,
         const COOKIE_LENGTH: usize,
         CookieGenerator,
-    > SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
+    > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
     /// Get a session from the storage backend.
     ///
@@ -254,8 +254,8 @@ impl<
     }
 }
 
-impl<SessionData, Implementation: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
-    for SessionStore<SessionData, Implementation, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection: Clone, const COOKIE_LENGTH: usize, CookieGenerator: Clone> Clone
+    for SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
