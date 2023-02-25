@@ -9,13 +9,13 @@ env:
 
 jobs:
   feature_specific:
-    name: Check, test, docs, format and lint
+    name: Check specific feature set
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rust: [1.65.0, stable, beta, nightly]
-        feature-args: ["", "-f memory-store"]
+        feature-args: [""]
 
     steps:
     - uses: actions/checkout@master
@@ -39,13 +39,12 @@ jobs:
         args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests
 
   feature_agnostic:
-    name: Check, test, docs, format and lint
+    name: Check, test, docs, format and lint all features
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rust: [1.65.0, stable, beta, nightly]
-        feature-args: ["--all-features"]
 
     steps:
       - uses: actions/checkout@master
@@ -66,13 +65,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command:  check
-          args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests
+          args: --all-features --all --benches --bins --examples --tests
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ matrix.feature-args }} --all
+          args: --all-features --all
 
       - name: Docs
         uses: actions-rs/cargo@v1
@@ -89,4 +88,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: ${{ matrix.feature-args }} --all-targets
+          args: --all-features --all-targets
