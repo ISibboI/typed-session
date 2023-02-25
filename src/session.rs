@@ -5,30 +5,35 @@ use std::mem;
 
 /// A session with a client.
 /// This type handles the creation, updating and deletion of sessions.
-/// It is marked `#[must_use]`, as manually dropping it will not update the session store.
+/// It is marked `#[must_use]`, as dropping it will not update the session store.
 /// Instead, it should be passed to [SessionStore::store_session](crate::session_store::SessionStore::store_session).
 ///
-/// `COOKIE_LENGTH` should be a multiple of 32, which is the block-size of blake3.
+/// `SessionData` is the data associated with a session.
+/// `COOKIE_LENGTH` is the length of the session cookie, in characters.
+/// It should be a multiple of 32, which is the block size of blake3.
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct Session<Data, const COOKIE_LENGTH: usize = 64> {
-    pub(crate) state: SessionState<Data>,
+pub struct Session<SessionData, const COOKIE_LENGTH: usize = 64> {
+    pub(crate) state: SessionState<SessionData>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum SessionState<Data> {
+pub(crate) enum SessionState<SessionData> {
     /// The session was newly generated for this request, and not yet written to.
     /// In this state, the session does not necessarily need to be communicated to the client.
-    NewUnchanged { data: Data },
+    NewUnchanged { data: SessionData },
     /// The session was newly generated for this request, and was written to.
     /// In this state, the session must be communicated to the client.
-    NewChanged { expiry: SessionExpiry, data: Data },
+    NewChanged {
+        expiry: SessionExpiry,
+        data: SessionData,
+    },
     /// The session was loaded from the session store, and was not changed.
     Unchanged {
         previous_id: Option<SessionId>,
         current_id: SessionId,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     },
     /// The session was loaded from the session store, and was changed.
     /// Either the expiry datetime or the data have changed.
@@ -36,7 +41,7 @@ pub(crate) enum SessionState<Data> {
         deletable_id: Option<SessionId>,
         previous_id: SessionId,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     },
     /// The session was marked for deletion.
     Deleted {
@@ -66,18 +71,18 @@ pub type SessionIdType = [u8; blake3::OUT_LEN];
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
-impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
     /// Extract the optionally associated data and expiry while consuming the session.
     ///
     /// **This function is supposed to be used in tests only.**
     /// This loses the association of the data to the actual session, making it useless for most
     /// purposes.
-    pub fn into_data_expiry_pair(self) -> (Option<Data>, Option<SessionExpiry>) {
+    pub fn into_data_expiry_pair(self) -> (Option<SessionData>, Option<SessionExpiry>) {
         self.state.into_data_expiry_pair()
     }
 }
 
-impl<Data: Default, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+impl<SessionData: Default, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
     /// Create a new session with default data. Does not set an expiry.
     /// Using this method does not mark the session as changed, i.e. it will be silently dropped if
     /// neither the data nor the expiry are accessed mutably.
@@ -99,7 +104,7 @@ impl<Data: Default, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     }
 }
 
-impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
     /// Create a new session with the given session data. Does not set an expiry.
     /// Using this method marks the session as changed, i.e. it will be stored in the backend and
     /// communicated to the client even if it was created with default data and never accessed mutably.
@@ -114,7 +119,7 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// assert_eq!(&SessionExpiry::Never, session.expiry());
     /// assert_eq!(4, *session.data());
     /// # Ok(()) }) }
-    pub fn new_with_data(data: Data) -> Self {
+    pub fn new_with_data(data: SessionData) -> Self {
         Self {
             state: SessionState::new_with_data(data),
         }
@@ -128,7 +133,7 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
         current_id: SessionId,
         previous_id: Option<SessionId>,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     ) -> Self {
         Self {
             state: SessionState::new_from_session_store(current_id, previous_id, expiry, data),
@@ -152,7 +157,7 @@ impl<Data, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     }
 }
 
-impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
+impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
     /// Returns the expiry timestamp of this session, if there is one.
     ///
     /// # Example
@@ -174,7 +179,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
 
     /// Returns a reference to the data associated with this session.
     /// This does not mark the session as changed.
-    pub fn data(&self) -> &Data {
+    pub fn data(&self) -> &SessionData {
         self.state.data()
     }
 
@@ -184,7 +189,7 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     /// Note that the session gets marked as changed, even if the returned reference is never written to.
     ///
     /// **Panics** if the session was marked for deletion before.
-    pub fn data_mut(&mut self) -> &mut Data {
+    pub fn data_mut(&mut self) -> &mut SessionData {
         self.state.data_mut()
     }
 
@@ -328,13 +333,15 @@ impl<Data: Debug, const COOKIE_LENGTH: usize> Session<Data, COOKIE_LENGTH> {
     }
 }
 
-impl<Data: Default, const COOKIE_LENGTH: usize> Default for Session<Data, COOKIE_LENGTH> {
+impl<SessionData: Default, const COOKIE_LENGTH: usize> Default
+    for Session<SessionData, COOKIE_LENGTH>
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<Data: Default> SessionState<Data> {
+impl<SessionData: Default> SessionState<SessionData> {
     fn new() -> Self {
         Self::NewUnchanged {
             data: Default::default(),
@@ -342,8 +349,8 @@ impl<Data: Default> SessionState<Data> {
     }
 }
 
-impl<Data> SessionState<Data> {
-    fn new_with_data(data: Data) -> Self {
+impl<SessionData> SessionState<SessionData> {
+    fn new_with_data(data: SessionData) -> Self {
         Self::NewChanged {
             data,
             expiry: SessionExpiry::Never,
@@ -354,7 +361,7 @@ impl<Data> SessionState<Data> {
         current_id: SessionId,
         previous_id: Option<SessionId>,
         expiry: SessionExpiry,
-        data: Data,
+        data: SessionData,
     ) -> Self {
         Self::Unchanged {
             current_id,
@@ -368,7 +375,7 @@ impl<Data> SessionState<Data> {
         matches!(self, Self::Deleted { .. } | Self::NewDeleted)
     }
 
-    fn into_data_expiry_pair(self) -> (Option<Data>, Option<SessionExpiry>) {
+    fn into_data_expiry_pair(self) -> (Option<SessionData>, Option<SessionExpiry>) {
         match self {
             SessionState::NewUnchanged { data } => (Some(data), None),
             SessionState::NewChanged { data, expiry }
@@ -381,7 +388,7 @@ impl<Data> SessionState<Data> {
     }
 }
 
-impl<Data: Debug> SessionState<Data> {
+impl<SessionData: Debug> SessionState<SessionData> {
     fn expiry(&self) -> &SessionExpiry {
         match self {
             Self::NewUnchanged { .. } => &SessionExpiry::Never,
@@ -410,7 +417,7 @@ impl<Data: Debug> SessionState<Data> {
         }
     }
 
-    fn data(&self) -> &Data {
+    fn data(&self) -> &SessionData {
         match self {
             Self::NewUnchanged { data }
             | Self::NewChanged { data, .. }
@@ -423,7 +430,7 @@ impl<Data: Debug> SessionState<Data> {
         }
     }
 
-    fn data_mut(&mut self) -> &mut Data {
+    fn data_mut(&mut self) -> &mut SessionData {
         self.change();
 
         match self {
