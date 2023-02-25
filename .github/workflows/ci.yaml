@@ -8,7 +8,7 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  build_and_test:
+  check_test_docs_format_lint:
     name: Check, test, docs, format and lint
     runs-on: ${{ matrix.os }}
     strategy:
