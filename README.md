@@ -4,8 +4,8 @@
 [![Downloads](https://img.shields.io/crates/d/typed-session.svg?style=flat-square)](https://crates.io/crates/typed-session)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/typed-session)
 
-Use typed-session to outsource all the low-level details of session management, such as session expiration and automatic renewal as well as change tracking of session data.
-Typed-session was designed with **security**, **efficiency** and **usability** in mind.
+Use typed-session to outsource all the low-level details of session management, such as session **expiration** and automatic **renewal** as well as **change tracking** of session data.
+Typed-session was designed to live up to the [The OWASP® Foundation's](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) session **security** standards, with **efficiency** and **usability** in mind.
 Typed session is meant to act as a middleware in a web framework, injecting session information into HTTP requests as required, and storing sessions in a database.
 
 The documentation is available on [docs.rs](https://docs.rs/typed-session).

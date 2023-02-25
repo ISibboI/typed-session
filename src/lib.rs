@@ -59,7 +59,7 @@
 //! [The OWASP® Foundation](https://owasp.org) recommends session ids to have at least
 //! [`128` bits of entropy](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#session-id-entropy).
 //! That is, `64` bits of actual entropy, where a good PRNG is assumed to produce `0.5` bits of entropy per bit.
-//! The random source used by default is [`rand::rngs::ThreadRng`], version 0.8.5, which is _secure_.
+//! The random source used by default is [`rand::rngs::ThreadRng`], from the [rand] crate, which is secure.
 //!
 //! Session data is stored only in the session store, the client only stores the unhashed session id.
 //! The session store only stores the hashed session id.
