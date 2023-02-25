@@ -13,7 +13,6 @@ jobs:
     name: Check default
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
@@ -43,7 +42,6 @@ jobs:
     name: Check all features
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
@@ -105,9 +103,10 @@ jobs:
     name: Check, test, doc, format and lint with all features
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        rust: ["$MSRV", stable, beta, nightly]
+        rust: [${{ env.MSRV }}, stable, beta, nightly]
 
     steps:
       - uses: actions/checkout@master
