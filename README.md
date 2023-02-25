@@ -5,13 +5,16 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/typed-session)
 
 Use typed-session to outsource all the low-level details of session management, such as session expiration and automatic renewal as well as change tracking of session data.
-Typed-session was designed with security, efficiency and usability in mind.
+Typed-session was designed with **security**, **efficiency** and **usability** in mind.
+Typed session is meant to act as a middleware in a web framework, injecting session information into HTTP requests as required, and storing sessions in a database.
 
-Currently, the following session stores are available:
+The documentation is available on [docs.rs](https://docs.rs/typed-session).
+
+Currently, the following **session stores** are available:
 
  * `MemoryStore`, a debug session store available under the feature flag `memory-store`.
 
-Currently, typed-session is integrated into the following web frameworks:
+Currently, typed-session is integrated into the following **web frameworks**:
 
  * none so far
 
