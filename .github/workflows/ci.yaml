@@ -8,15 +8,46 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  feature_specific:
-    needs: feature-agnostic
+  precheck:
+    name: Check default
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+        feature-args: ["", "--all-features"]
+
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Install ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+          override: true
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command:  check
+          args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests --lib
+
+  check_features:
+    needs: precheck
     name: Check specific feature set
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [1.65.0, stable, beta, nightly]
+        os: [ubuntu-latest]
+        rust: [stable]
         feature-args: [""]
 
     steps:
@@ -38,15 +69,23 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command:  check
-        args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests
+        args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests --lib
 
-  feature_agnostic:
-    name: Check, test, docs, format and lint all features
+    - name: Test
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: ${{ matrix.feature-args }} --all
+
+  check_platform_compatibility:
+    needs: precheck
+    name: Check platform compatibility
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [1.65.0, stable, beta, nightly]
+        rust: [stable]
 
     steps:
       - uses: actions/checkout@master
@@ -67,7 +106,68 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command:  check
-          args: --all-features --all --benches --bins --examples --tests
+          args: --all-features --all --benches --bins --examples --tests --lib
+
+  check_rust_compatibility:
+    needs: precheck
+    name: Check Rust compatibility
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Install ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+          override: true
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command:  check
+          args: --all-features --all --benches --bins --examples --tests --lib
+
+  detailed_tests:
+    needs: precheck
+    name: Check, test, docs, format and lint all features
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Install ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+          override: true
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command:  check
+          args: --all-features --all --benches --bins --examples --tests --lib
 
       - name: Test
         uses: actions-rs/cargo@v1
@@ -79,6 +179,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
+          args: --all-features
 
       - name: Format
         uses: actions-rs/cargo@v1
