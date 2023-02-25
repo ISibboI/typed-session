@@ -46,10 +46,11 @@ jobs:
     - name: Format
       uses: actions-rs/cargo@v1
       with:
-        command: fmt -- --check
+        command: fmt
+        args: -- --check
 
     - name: Lint
       uses: actions-rs/cargo@v1
       with:
-        command: clippy --all-targets --all-features
-        args: --all
+        command: clippy
+        args: --all-targets --all-features
