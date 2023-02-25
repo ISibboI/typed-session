@@ -8,13 +8,14 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  check_test_docs_format_lint:
+  feature_specific:
     name: Check, test, docs, format and lint
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
         rust: [1.65.0, stable, beta, nightly]
+        feature-args: ["", "-f memory-store"]
 
     steps:
     - uses: actions/checkout@master
@@ -35,27 +36,56 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command:  check
-        args: --all --benches --bins --examples --tests
+        args: ${{ matrix.feature-args }} --all --benches --bins --examples --tests
 
-    - name: Test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all
+  feature_agnostic:
+    name: Check, test, docs, format and lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        rust: [1.65.0, stable, beta, nightly]
 
-    - name: Docs
-      uses: actions-rs/cargo@v1
-      with:
-        command: doc
+    steps:
+      - uses: actions/checkout@master
 
-    - name: Format
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
+      - name: Install ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+          override: true
 
-    - name: Lint
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --all-targets --all-features
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command:  check
+          args: --all --benches --bins --examples --tests --all-features
+
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --all-features
+
+      - name: Docs
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+
+      - name: Lint
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --all-features
