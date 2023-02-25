@@ -97,6 +97,11 @@
 //! # Ok(()) }) }
 //! ```
 //!
+//! ## Debugging
+//!
+//! To aid in debugging, this crate offers a debug backend implementation called [`MemoryStore`]
+//! under the feature flag `memory-store`.
+//!
 //! ## Comparison with crate [async-session](https://crates.io/crates/async-session)
 //!
 //! This crate was designed after `async-session`. The main difference is that the session data is
@@ -118,10 +123,12 @@ pub use anyhow::Error;
 /// An anyhow::Result with default return type of ()
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
+#[cfg(feature = "memory-store")]
 mod memory_store;
 mod session;
 mod session_store;
 
+#[cfg(feature = "memory-store")]
 pub use memory_store::{
     DefaultLogger, MemoryStore, MemoryStoreOperationLogger, NoLogger, Operation,
 };

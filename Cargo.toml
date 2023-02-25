@@ -12,6 +12,9 @@ categories = ["web-programming"]
 authors = ["Sebastian Schmidt <isibboi@gmail.com>"]
 rust-version = "1.65.0"
 
+[features]
+memory-store = []
+
 [dependencies]
 async-trait = "0.1.57"
 rand = "0.8.5"
