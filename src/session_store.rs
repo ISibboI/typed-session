@@ -113,7 +113,7 @@ impl<
     /// If the session cookie requires to be updated, because the session data or expiry changed,
     /// then a [SessionCookieCommand] is returned.
     pub async fn store_session(
-        &mut self,
+        &self,
         session: Session<SessionData>,
     ) -> Result<SessionCookieCommand> {
         if matches!(
@@ -149,7 +149,7 @@ impl<
     }
 
     async fn try_store_session(
-        &mut self,
+        &self,
         session: &Session<SessionData>,
     ) -> Result<WriteSessionResult<SessionCookieCommand>> {
         match &session.state {
@@ -199,7 +199,7 @@ impl<
     }
 
     /// Empties the entire store, deleting all sessions.
-    pub async fn clear_store(&mut self) -> Result {
+    pub async fn clear_store(&self) -> Result {
         self.implementation.clear().await
     }
 }
@@ -304,7 +304,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     /// Create a session with the given `current_id`, `expiry` and `data`.
     /// The `previous_id` stays unset.
     async fn create_session(
-        &mut self,
+        &self,
         current_id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
@@ -322,7 +322,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     ///  2. Set `A.current_id = current_id` and `A.previous_id = previous_id`. Optionally, remove `A`'s association with `deletable_id`.
     ///  3. Set `A.expiry = expiry` and `A.data = data`.
     async fn update_session(
-        &mut self,
+        &self,
         current_id: &SessionId,
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
@@ -332,13 +332,13 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
 
     /// Delete the session with the given `current_id` and optionally `previous_id`.
     async fn delete_session(
-        &mut self,
+        &self,
         current_id: &SessionId,
         previous_id: &Option<SessionId>,
     ) -> Result<()>;
 
     /// Delete all sessions in the store.
-    async fn clear(&mut self) -> Result<()>;
+    async fn clear(&self) -> Result<()>;
 }
 
 /// The result of writing a session, indicating if the session could be written, or if the id collided.

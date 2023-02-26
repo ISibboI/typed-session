@@ -42,7 +42,7 @@ impl<
     }
 
     async fn create_session(
-        &mut self,
+        &self,
         id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
@@ -77,7 +77,7 @@ impl<
     }
 
     async fn update_session(
-        &mut self,
+        &self,
         current_id: &SessionId,
         previous_id: &SessionId,
         deletable_id: &Option<SessionId>,
@@ -113,7 +113,7 @@ impl<
     }
 
     async fn delete_session(
-        &mut self,
+        &self,
         current_id: &SessionId,
         previous_id: &Option<SessionId>,
     ) -> Result<()> {
@@ -129,7 +129,7 @@ impl<
         Ok(())
     }
 
-    async fn clear(&mut self) -> Result<()> {
+    async fn clear(&self) -> Result<()> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_clear();
         store.session_map.clear();
