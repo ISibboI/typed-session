@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use std::collections::BTreeSet;
 use typed_session::{
     DebugSessionCookieGenerator, MemoryStore, Operation, Session, SessionCookieCommand,
@@ -13,6 +14,27 @@ async fn test_dont_store_default_session() {
         SessionRenewalStrategy::Ignore,
     );
     let session = Session::new();
+    matches!(
+        store.store_session(session).await.unwrap(),
+        SessionCookieCommand::DoNothing
+    );
+    assert_eq!(
+        store.into_inner().into_logger().into_inner().as_slice(),
+        &[]
+    );
+}
+
+/// If a new session is created but only its expiry is mutated and not its data, then no cookie is set and the session is not stored in the session store.
+#[async_std::test]
+async fn test_dont_store_default_session_with_expiry_change() {
+    let store: SessionStore<(), _, 32, _> = SessionStore::new_with_cookie_generator(
+        MemoryStore::new_with_logger(),
+        DebugSessionCookieGenerator::default(),
+        SessionRenewalStrategy::Ignore,
+    );
+    let mut session = Session::new();
+    session.set_expiry(Utc::now() + Duration::days(1));
+
     matches!(
         store.store_session(session).await.unwrap(),
         SessionCookieCommand::DoNothing
