@@ -363,7 +363,9 @@ impl<OkData> WriteSessionResult<OkData> {
 }
 
 /// Indicates if the client's session cookie should be updated.
+/// Annotated with `#[must_use]`, because silently dropping this very likely indicates that the communication of the session to the client was forgotten about.
 #[derive(Debug, Eq, PartialEq)]
+#[must_use]
 pub enum SessionCookieCommand {
     /// Set or update the session cookie.
     Set {

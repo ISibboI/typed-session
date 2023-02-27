@@ -5,7 +5,7 @@ use std::mem;
 /// A session with a client.
 /// This type handles the creation, updating and deletion of sessions.
 /// It is marked `#[must_use]`, as dropping it will not update the session store.
-/// Instead, it should be passed to [SessionStore::store_session](crate::session_store::SessionStore::store_session).
+/// Instead, it should be passed to [`SessionStore::store_session`](crate::session_store::SessionStore::store_session).
 ///
 /// `SessionData` is the data associated with a session.
 /// `COOKIE_LENGTH` is the length of the session cookie, in characters.
@@ -21,7 +21,10 @@ pub struct Session<SessionData, const COOKIE_LENGTH: usize = 32> {
 pub(crate) enum SessionState<SessionData> {
     /// The session was newly generated for this request, and not yet written to.
     /// In this state, the session does not necessarily need to be communicated to the client.
-    NewUnchanged { data: SessionData },
+    NewUnchanged {
+        expiry: SessionExpiry,
+        data: SessionData,
+    },
     /// The session was newly generated for this request, and was written to.
     /// In this state, the session must be communicated to the client.
     NewChanged {
@@ -193,8 +196,9 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
         self.state.data_mut()
     }
 
-    /// Mark this session for destruction. the actual session record
-    /// is not destroyed until the end of this response cycle.
+    /// Mark this session for destruction.
+    /// Further access to this session will result in a panic.
+    /// Note that the session is only deleted from the session store if [`SessionStore::store_session`](crate::session_store::SessionStore::store_session) is called.
     ///
     /// # Example
     ///
@@ -210,10 +214,10 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
         self.state.delete();
     }
 
-    /// Generates a new id and cookie for this session.
+    /// Forces the generation of a new id and cookie for this session, unless the session is new and its data was not accessed mutably.
     pub fn regenerate(&mut self) {
-        // Calling this marks the state as changed.
-        self.state.change();
+        // Calling this marks the state as changed, unless it is new and its data was not accessed mutably.
+        self.state.change_expiry();
     }
 
     /// Updates the expiry timestamp of this session.
@@ -344,6 +348,7 @@ impl<SessionData: Default, const COOKIE_LENGTH: usize> Default
 impl<SessionData: Default> SessionState<SessionData> {
     fn new() -> Self {
         Self::NewUnchanged {
+            expiry: SessionExpiry::Never,
             data: Default::default(),
         }
     }
@@ -352,8 +357,8 @@ impl<SessionData: Default> SessionState<SessionData> {
 impl<SessionData> SessionState<SessionData> {
     fn new_with_data(data: SessionData) -> Self {
         Self::NewChanged {
-            data,
             expiry: SessionExpiry::Never,
+            data,
         }
     }
 
@@ -377,8 +382,8 @@ impl<SessionData> SessionState<SessionData> {
 
     fn into_data_expiry_pair(self) -> (Option<SessionData>, Option<SessionExpiry>) {
         match self {
-            SessionState::NewUnchanged { data } => (Some(data), None),
-            SessionState::NewChanged { data, expiry }
+            SessionState::NewUnchanged { data, expiry }
+            | SessionState::NewChanged { data, expiry }
             | SessionState::Unchanged { data, expiry, .. }
             | SessionState::Changed { data, expiry, .. } => (Some(data), Some(expiry)),
             SessionState::Deleted { .. } | SessionState::NewDeleted | SessionState::Invalid => {
@@ -391,8 +396,8 @@ impl<SessionData> SessionState<SessionData> {
 impl<SessionData: Debug> SessionState<SessionData> {
     fn expiry(&self) -> &SessionExpiry {
         match self {
-            Self::NewUnchanged { .. } => &SessionExpiry::Never,
-            Self::NewChanged { expiry, .. }
+            Self::NewUnchanged { expiry, .. }
+            | Self::NewChanged { expiry, .. }
             | Self::Unchanged { expiry, .. }
             | Self::Changed { expiry, .. } => expiry,
             Self::Deleted { .. } | Self::NewDeleted => {
@@ -403,15 +408,17 @@ impl<SessionData: Debug> SessionState<SessionData> {
     }
 
     fn expiry_mut(&mut self) -> &mut SessionExpiry {
-        self.change();
+        self.change_expiry();
 
         match self {
-            Self::NewChanged { expiry, .. } | Self::Changed { expiry, .. } => expiry,
+            Self::NewUnchanged { expiry, .. }
+            | Self::NewChanged { expiry, .. }
+            | Self::Changed { expiry, .. } => expiry,
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to retrieve the expiry of a purged session {self:?}")
             }
-            Self::NewUnchanged { .. } | Self::Unchanged { .. } => {
-                unreachable!("Cannot be unchanged after explicitly changing")
+            Self::Unchanged { .. } => {
+                unreachable!("Cannot be unchanged after explicitly changing expiry")
             }
             Self::Invalid => unreachable!("Invalid state is used internally only"),
         }
@@ -419,7 +426,7 @@ impl<SessionData: Debug> SessionState<SessionData> {
 
     fn data(&self) -> &SessionData {
         match self {
-            Self::NewUnchanged { data }
+            Self::NewUnchanged { data, .. }
             | Self::NewChanged { data, .. }
             | Self::Unchanged { data, .. }
             | Self::Changed { data, .. } => data,
@@ -431,7 +438,7 @@ impl<SessionData: Debug> SessionState<SessionData> {
     }
 
     fn data_mut(&mut self) -> &mut SessionData {
-        self.change();
+        self.change_data();
 
         match self {
             Self::NewChanged { data, .. } | Self::Changed { data, .. } => data,
@@ -445,14 +452,32 @@ impl<SessionData: Debug> SessionState<SessionData> {
         }
     }
 
-    fn change(&mut self) {
+    fn change_expiry(&mut self) {
         match self {
-            Self::NewUnchanged { .. } => {
-                let Self::NewUnchanged { data } = mem::replace(self, Self::Invalid) else {unreachable!()};
-                *self = Self::NewChanged {
-                    expiry: SessionExpiry::Never,
+            Self::Unchanged { .. } => {
+                let Self::Unchanged { current_id, previous_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                *self = Self::Changed {
+                    previous_id: current_id,
+                    deletable_id: previous_id,
+                    expiry,
                     data,
                 };
+            }
+            Self::Changed { .. } | Self::NewChanged { .. } => { /* Already changed. */ }
+            Self::NewUnchanged { .. } => { /* Changing expiry is not enough reason to store the session. */
+            }
+            Self::Deleted { .. } | Self::NewDeleted => {
+                panic!("Attempted to change purged session {self:?}")
+            }
+            Self::Invalid => unreachable!("Invalid state is used internally only"),
+        }
+    }
+
+    fn change_data(&mut self) {
+        match self {
+            Self::NewUnchanged { .. } => {
+                let Self::NewUnchanged {  expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                *self = Self::NewChanged { expiry, data };
             }
             Self::Unchanged { .. } => {
                 let Self::Unchanged { current_id, previous_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};

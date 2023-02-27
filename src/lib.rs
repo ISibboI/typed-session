@@ -5,31 +5,31 @@
 //! web-framework of choice.
 //!
 //! This crate handles all the typical plumbing associated with session handling, including:
-//!  * change tracking
-//!  * expiry and automatic renewal
-//!  * generation of session ids
+//!  * change tracking,
+//!  * expiry and automatic renewal and
+//!  * generation of session ids.
 //!
-//! On the "front-end" of this crate, the [`SessionStore`](SessionStore) provides a simple interface
+//! On the "front-end" of this crate, the [`SessionStore`] provides a simple interface
 //! to load and store sessions given an identifying string, typically the value of a cookie.
-//! The [`Session`](Session) type has a type parameter `SessionData` that decides what session-specific
+//! The [`Session`] type has a type parameter `SessionData` that decides what session-specific
 //! data is stored in the database.
+//! The user on the front-end is responsible for communicating session cookies to the client by performing the [`SessionCookieCommand`] returned by [`SessionStore::store_session`].
 //!
-//! On the "back-end" of this crate, the trait [`SessionStoreConnector`](SessionStoreConnector)
-//! provides a simple [*CRUD*](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)-based
+//! On the "back-end" of this crate, the trait [`SessionStoreConnector`]
+//! expects a simple [*CRUD*](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)-based
 //! interface for handling sessions in a database.
 //!
 //! ## Change tracking
 //!
-//! Changes are tracked automatically.
-//! Whenever the data or expiry of a session is accessed mutably, the session is marked as changed.
-//! The session store only forwards updates to its implementation when a change has happened.
-//! Further, the session store is responsible for deciding whether the session cookie should be
-//! renewed, hence its functions return a [`SessionCookieCommand`] where applicable.
-//! This command should be executed by the web framework, adding a `Set-Cookie` header to the HTTP
-//! response as required.
+//! Changes are tracked automatically in an efficient way.
+//! If a client has no session or an invalid session, a new session is created for that client.
+//! However, only if the session contains meaningful data it is stored and communicated to the client.
+//! Session data is assumed to be meaningful when it has been accessed mutably or the session was explicitly constructed with non-default data.
+//! Mutably accessing or mutating the expiry is not considered enough for the session to actually be stored.
 //!
-//! As a small optimisation, sessions that contain "default" data are never stored in the session store
-//! or communicated to the client, unless their data or expiry is accessed mutably.
+//! Once the session is stored, if either the data or expiry is accessed mutably by a future request, it is updated.
+//! Each update generates a new session id to prevent simultaneous updates of the same session from producing unexpected results.
+//! If the session is not updated, then we neither touch the session store, nor do we communicate any session cookie to the client.
 //!
 //! ## Session expiry
 //!
