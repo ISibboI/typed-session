@@ -84,17 +84,15 @@ impl<
 
         if store.session_map.contains_key(current_id) {
             Ok(WriteSessionResult::SessionIdExists)
-        } else {
-            if let Some(mut session_body) = store.session_map.remove(previous_id) {
-                session_body.current_id = current_id.clone();
-                session_body.expiry = expiry.clone();
-                session_body.data = data.clone();
+        } else if let Some(mut session_body) = store.session_map.remove(previous_id) {
+            session_body.current_id = current_id.clone();
+            session_body.expiry = *expiry;
+            session_body.data = data.clone();
 
-                store.session_map.insert(current_id.clone(), session_body);
-                Ok(WriteSessionResult::Ok(()))
-            } else {
-                Err(Error::msg("Tried to update a non-existing session"))
-            }
+            store.session_map.insert(current_id.clone(), session_body);
+            Ok(WriteSessionResult::Ok(()))
+        } else {
+            Err(Error::msg("Tried to update a non-existing session"))
         }
     }
 
