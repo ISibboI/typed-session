@@ -5,6 +5,7 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
+use anyhow::Error;
 
 /// # In-memory session store
 ///
@@ -18,7 +19,7 @@ pub struct MemoryStore<SessionData, OperationLogger> {
 
 #[derive(Debug)]
 struct MemoryStoreData<SessionData, OperationLogger> {
-    session_map: HashMap<SessionId, Arc<SessionBody<SessionData>>>,
+    session_map: HashMap<SessionId, SessionBody<SessionData>>,
     operation_logger: OperationLogger,
     maximum_retries_on_id_collision: Option<u32>,
 }
@@ -26,7 +27,6 @@ struct MemoryStoreData<SessionData, OperationLogger> {
 #[derive(Debug, Clone)]
 struct SessionBody<SessionData> {
     current_id: SessionId,
-    previous_id: Option<SessionId>,
     expiry: SessionExpiry,
     data: SessionData,
 }
@@ -54,10 +54,9 @@ impl<
         if store.session_map.contains_key(id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
-            store.session_map.insert(
-                id.clone(),
-                Arc::new(SessionBody::new_cloned(id, None, expiry, data)),
-            );
+            store
+                .session_map
+                .insert(id.clone(), SessionBody::new_cloned(id, expiry, data));
             Ok(WriteSessionResult::Ok(()))
         }
     }
@@ -67,12 +66,7 @@ impl<
         store.operation_logger.log_read_session(id);
 
         Ok(store.session_map.get(id).map(|body| {
-            Session::new_from_session_store(
-                body.current_id.clone(),
-                body.previous_id.clone(),
-                body.expiry,
-                body.data.clone(),
-            )
+            Session::new_from_session_store(body.current_id.clone(), body.expiry, body.data.clone())
         }))
     }
 
@@ -80,52 +74,35 @@ impl<
         &self,
         current_id: &SessionId,
         previous_id: &SessionId,
-        deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
         data: &SessionData,
     ) -> Result<WriteSessionResult> {
         let mut store = self.store.lock().unwrap();
-        store.operation_logger.log_update_session(
-            current_id,
-            previous_id,
-            deletable_id,
-            expiry,
-            data,
-        );
+        store
+            .operation_logger
+            .log_update_session(current_id, previous_id, expiry, data);
 
         if store.session_map.contains_key(current_id) {
             Ok(WriteSessionResult::SessionIdExists)
         } else {
-            if let Some(deletable_id) = deletable_id {
-                store.session_map.remove(deletable_id);
-            }
+            if let Some(mut session_body) = store.session_map.remove(previous_id) {
+                session_body.current_id = current_id.clone();
+                session_body.expiry = expiry.clone();
+                session_body.data = data.clone();
 
-            let body = Arc::new(SessionBody::new_cloned(
-                current_id,
-                Some(previous_id),
-                expiry,
-                data,
-            ));
-            store.session_map.insert(current_id.clone(), body.clone());
-            store.session_map.insert(previous_id.clone(), body);
-            Ok(WriteSessionResult::Ok(()))
+                store.session_map.insert(current_id.clone(), session_body);
+                Ok(WriteSessionResult::Ok(()))
+            } else {
+                Err(Error::msg("Tried to update a non-existing session"))
+            }
         }
     }
 
-    async fn delete_session(
-        &self,
-        current_id: &SessionId,
-        previous_id: &Option<SessionId>,
-    ) -> Result<()> {
+    async fn delete_session(&self, current_id: &SessionId) -> Result<()> {
         let mut store = self.store.lock().unwrap();
-        store
-            .operation_logger
-            .log_delete_session(current_id, previous_id);
+        store.operation_logger.log_delete_session(current_id);
 
         store.session_map.remove(current_id);
-        if let Some(previous_id) = previous_id.as_ref() {
-            store.session_map.remove(previous_id);
-        }
         Ok(())
     }
 
@@ -197,12 +174,7 @@ impl<SessionData: Clone, OperationLogger> MemoryStore<SessionData, OperationLogg
             .session_map
             .iter()
             .map(|(id, body)| {
-                Session::new_from_session_store(
-                    id.clone(),
-                    body.previous_id.clone(),
-                    body.expiry,
-                    body.data.clone(),
-                )
+                Session::new_from_session_store(id.clone(), body.expiry, body.data.clone())
             })
             .for_each(f);
     }
@@ -233,15 +205,9 @@ impl<SessionData> MemoryStore<SessionData, DefaultLogger<SessionData>> {
 }
 
 impl<SessionData: Clone> SessionBody<SessionData> {
-    fn new_cloned(
-        current_id: &SessionId,
-        previous_id: Option<&SessionId>,
-        expiry: &SessionExpiry,
-        data: &SessionData,
-    ) -> Self {
+    fn new_cloned(current_id: &SessionId, expiry: &SessionExpiry, data: &SessionData) -> Self {
         Self {
             current_id: current_id.clone(),
-            previous_id: previous_id.cloned(),
             expiry: *expiry,
             data: data.clone(),
         }
@@ -273,13 +239,12 @@ pub trait MemoryStoreOperationLogger<SessionData> {
         &mut self,
         current_id: &SessionId,
         previous_id: &SessionId,
-        deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
         data: &SessionData,
     );
 
     /// Log a delete session operation.
-    fn log_delete_session(&mut self, current_id: &SessionId, previous_id: &Option<SessionId>);
+    fn log_delete_session(&mut self, current_id: &SessionId);
 
     /// Log a clear operation.
     fn log_clear(&mut self);
@@ -307,14 +272,13 @@ impl<SessionData> MemoryStoreOperationLogger<SessionData> for NoLogger {
         &mut self,
         _current_id: &SessionId,
         _previous_id: &SessionId,
-        _deletable_id: &Option<SessionId>,
         _expiry: &SessionExpiry,
         _data: &SessionData,
     ) {
         // do nothing
     }
 
-    fn log_delete_session(&mut self, _current_id: &SessionId, _previous_id: &Option<SessionId>) {
+    fn log_delete_session(&mut self, _current_id: &SessionId) {
         // do nothing
     }
 
@@ -344,13 +308,11 @@ pub enum Operation<SessionData> {
     UpdateSession {
         current_id: SessionId,
         previous_id: SessionId,
-        deletable_id: Option<SessionId>,
         expiry: SessionExpiry,
         data: SessionData,
     },
     DeleteSession {
         current_id: SessionId,
-        previous_id: Option<SessionId>,
     },
     Clear,
 }
@@ -375,23 +337,20 @@ impl<SessionData: Clone> MemoryStoreOperationLogger<SessionData> for DefaultLogg
         &mut self,
         current_id: &SessionId,
         previous_id: &SessionId,
-        deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
         data: &SessionData,
     ) {
         self.log.lock().unwrap().push(Operation::UpdateSession {
             current_id: current_id.clone(),
             previous_id: previous_id.clone(),
-            deletable_id: deletable_id.clone(),
             expiry: *expiry,
             data: data.clone(),
         });
     }
 
-    fn log_delete_session(&mut self, current_id: &SessionId, previous_id: &Option<SessionId>) {
+    fn log_delete_session(&mut self, current_id: &SessionId) {
         self.log.lock().unwrap().push(Operation::DeleteSession {
             current_id: current_id.clone(),
-            previous_id: previous_id.clone(),
         });
     }
 

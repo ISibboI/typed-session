@@ -166,8 +166,7 @@ impl<
                     }))
             }
             SessionState::Changed {
-                previous_id,
-                deletable_id,
+                current_id: previous_id,
                 expiry,
                 data,
             } => {
@@ -175,20 +174,15 @@ impl<
                 let current_id = SessionId::from_cookie_value(&cookie_value);
                 Ok(self
                     .implementation
-                    .update_session(&current_id, previous_id, deletable_id, expiry, data)
+                    .update_session(&current_id, previous_id, expiry, data)
                     .await?
                     .map(|()| SessionCookieCommand::Set {
                         cookie_value,
                         expiry: *expiry,
                     }))
             }
-            SessionState::Deleted {
-                current_id,
-                previous_id,
-            } => {
-                self.implementation
-                    .delete_session(current_id, previous_id)
-                    .await?;
+            SessionState::Deleted { current_id } => {
+                self.implementation.delete_session(current_id).await?;
                 Ok(WriteSessionResult::Ok(SessionCookieCommand::Delete))
             }
             SessionState::NewUnchanged { .. }
@@ -284,14 +278,8 @@ impl<
 /// This is to allow the whole [`SessionStore`] to be cloned and used concurrently, e.g. by a
 /// parallel or at least concurrent server application.
 ///
-/// Sessions are identified by up to two session ids (`current_id` and `previous_id`) to handle session renewal under concurrent requests.
-/// Otherwise, the following may happen:
-///  * The client sends requests `A` and `B` with session id `X`.
-///  * We handle request `A`, renewing the session id to `Y`.
-///  * Then we handle request `B`. But request `B` was sent with the old session id `X`, so it now fails.
-///
-/// The session store must ensure that there is never any overlap between the ids,
-/// i.e. the multiset of all current and previous ids must contain each id at most once.
+/// Sessions are identified by a session id (`current_id`).
+/// The session store must ensure that there is never any overlap between the ids.
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
@@ -318,24 +306,23 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     /// Update a session with new ids, data and expiry.
     ///
     /// This method must be implemented as follows:
-    ///  1. Find a session `A` identified by the given `previous_id`. The session must have either `previous_id == id` or `current_id == id`.
-    ///  2. Set `A.current_id = current_id` and `A.previous_id = previous_id`. Optionally, remove `A`'s association with `deletable_id`.
+    ///  1. Find the session `A` identified by the given `previous_id`.
+    ///  2. Remap `A` to be identified by `current_id` instead of `previous_id`.
     ///  3. Set `A.expiry = expiry` and `A.data = data`.
+    ///
+    /// To avoid race conditions, this method must not allow concurrent updates of a session id.
+    /// It must never happen that by updating a session id `X` concurrently, there are suddenly two different session ids `Y` and `Z` stemming both from `X`.
+    /// Instead, one of the updates must fail.
     async fn update_session(
         &self,
         current_id: &SessionId,
         previous_id: &SessionId,
-        deletable_id: &Option<SessionId>,
         expiry: &SessionExpiry,
         data: &SessionData,
     ) -> Result<WriteSessionResult>;
 
     /// Delete the session with the given `current_id` and optionally `previous_id`.
-    async fn delete_session(
-        &self,
-        current_id: &SessionId,
-        previous_id: &Option<SessionId>,
-    ) -> Result<()>;
+    async fn delete_session(&self, current_id: &SessionId) -> Result<()>;
 
     /// Delete all sessions in the store.
     async fn clear(&self) -> Result<()>;
