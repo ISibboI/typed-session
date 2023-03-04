@@ -1,11 +1,11 @@
 use crate::session_store::WriteSessionResult;
 use crate::{Result, Session, SessionExpiry, SessionId, SessionStoreConnector};
+use anyhow::Error;
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use anyhow::Error;
 
 /// # In-memory session store
 ///
