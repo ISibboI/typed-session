@@ -98,11 +98,11 @@ impl<
         }
     }
 
-    async fn delete_session(&self, current_id: &SessionId) -> Result<()> {
+    async fn delete_session(&self, id: &SessionId) -> Result<()> {
         let mut store = self.store.lock().unwrap();
-        store.operation_logger.log_delete_session(current_id);
+        store.operation_logger.log_delete_session(id);
 
-        store.session_map.remove(current_id);
+        store.session_map.remove(id);
         Ok(())
     }
 
