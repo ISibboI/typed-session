@@ -165,8 +165,6 @@ async fn test_update_changed_session() {
     );
 }
 
-
-
 /// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
 #[async_std::test]
 async fn test_delete_deleted_session() {
