@@ -290,7 +290,6 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     fn maximum_retries_on_id_collision(&self) -> Option<u32>;
 
     /// Create a session with the given `current_id`, `expiry` and `data`.
-    /// The `previous_id` stays unset.
     async fn create_session(
         &self,
         current_id: &SessionId,
@@ -299,8 +298,6 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     ) -> Result<WriteSessionResult>;
 
     /// Read the session with the given `id`.
-    /// This must return the session that either has `previous_id == id` or `current_id == id`.
-    /// Older session ids must not be considered.
     async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>>;
 
     /// Update a session with new ids, data and expiry.
@@ -310,7 +307,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     ///  2. Remap `A` to be identified by `current_id` instead of `previous_id`.
     ///  3. Set `A.expiry = expiry` and `A.data = data`.
     ///
-    /// To avoid race conditions, this method must not allow concurrent updates of a session id.
+    /// **Security:** To avoid race conditions, this method must not allow concurrent updates of a session id.
     /// It must never happen that by updating a session id `X` concurrently, there are suddenly two different session ids `Y` and `Z` stemming both from `X`.
     /// Instead, one of the updates must fail.
     async fn update_session(
@@ -321,8 +318,8 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
         data: &SessionData,
     ) -> Result<WriteSessionResult>;
 
-    /// Delete the session with the given `current_id` and optionally `previous_id`.
-    async fn delete_session(&self, current_id: &SessionId) -> Result<()>;
+    /// Delete the session with the given `id`.
+    async fn delete_session(&self, id: &SessionId) -> Result<()>;
 
     /// Delete all sessions in the store.
     async fn clear(&self) -> Result<()>;
