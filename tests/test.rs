@@ -220,7 +220,7 @@ async fn test_prevent_using_old_session_id() {
     let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
     assert_eq!(cookie_value, cookie_0);
     let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
-    assert_eq!(*session.data(), false);
+    assert!(!*session.data());
     *session.data_mut() = true;
     assert_eq!(
         store.store_session(session).await.unwrap(),
