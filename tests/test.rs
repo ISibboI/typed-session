@@ -164,3 +164,45 @@ async fn test_update_changed_session() {
         ]
     );
 }
+
+
+
+/// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
+#[async_std::test]
+async fn test_delete_deleted_session() {
+    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_0 = cookie_generator.generate_cookie();
+    let store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
+        MemoryStore::new_with_logger(),
+        DebugSessionCookieGenerator::default(),
+        SessionRenewalStrategy::Ignore,
+    );
+    let mut session = Session::new();
+    *session.data_mut() = 1;
+    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    assert_eq!(cookie_value, cookie_0);
+    let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
+    assert_eq!(*session.data(), 1);
+    session.delete();
+    assert_eq!(
+        store.store_session(session).await.unwrap(),
+        SessionCookieCommand::Delete,
+    );
+    assert_eq!(
+        store.into_inner().into_logger().into_inner().as_slice(),
+        &[
+            Operation::CreateSession {
+                id: SessionId::from_cookie_value(&cookie_0),
+                expiry: SessionExpiry::Never,
+                data: 1,
+            },
+            Operation::ReadSession {
+                id: SessionId::from_cookie_value(&cookie_0)
+            },
+            Operation::DeleteSession {
+                current_id: SessionId::from_cookie_value(&cookie_0),
+                previous_id: None,
+            }
+        ]
+    );
+}
