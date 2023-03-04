@@ -157,7 +157,6 @@ async fn test_update_changed_session() {
             Operation::UpdateSession {
                 current_id: SessionId::from_cookie_value(&cookie_1),
                 previous_id: SessionId::from_cookie_value(&cookie_0),
-                deletable_id: None,
                 expiry: SessionExpiry::Never,
                 data: 2,
             }
@@ -165,7 +164,7 @@ async fn test_update_changed_session() {
     );
 }
 
-/// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
+/// If a session is deleted, then the cookie is deleted and the session is deleted from the session store.
 #[async_std::test]
 async fn test_delete_deleted_session() {
     let cookie_generator = DebugSessionCookieGenerator::<32>::default();
@@ -199,8 +198,61 @@ async fn test_delete_deleted_session() {
             },
             Operation::DeleteSession {
                 current_id: SessionId::from_cookie_value(&cookie_0),
-                previous_id: None,
             }
+        ]
+    );
+}
+
+/// If a session is changed, the old session id becomes invalid.
+#[async_std::test]
+async fn test_prevent_using_old_session_id() {
+    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_0 = cookie_generator.generate_cookie();
+    let cookie_1 = cookie_generator.generate_cookie();
+    // true represents being logged in
+    let store: SessionStore<bool, _, 32, _> = SessionStore::new_with_cookie_generator(
+        MemoryStore::new_with_logger(),
+        DebugSessionCookieGenerator::default(),
+        SessionRenewalStrategy::Ignore,
+    );
+    let mut session = Session::new();
+    *session.data_mut() = false;
+    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    assert_eq!(cookie_value, cookie_0);
+    let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
+    assert_eq!(*session.data(), false);
+    *session.data_mut() = true;
+    assert_eq!(
+        store.store_session(session).await.unwrap(),
+        SessionCookieCommand::Set {
+            cookie_value: cookie_1.clone(),
+            expiry: SessionExpiry::Never
+        }
+    );
+
+    // Check if we can upgrade the old session.
+    assert!(store.load_session(&cookie_0).await.unwrap().is_none());
+
+    assert_eq!(
+        store.into_inner().into_logger().into_inner().as_slice(),
+        &[
+            Operation::CreateSession {
+                id: SessionId::from_cookie_value(&cookie_0),
+                expiry: SessionExpiry::Never,
+                data: false,
+            },
+            Operation::ReadSession {
+                id: SessionId::from_cookie_value(&cookie_0)
+            },
+            Operation::UpdateSession {
+                current_id: SessionId::from_cookie_value(&cookie_1),
+                previous_id: SessionId::from_cookie_value(&cookie_0),
+                expiry: SessionExpiry::Never,
+                data: true,
+            },
+            Operation::ReadSession {
+                id: SessionId::from_cookie_value(&cookie_0)
+            },
         ]
     );
 }

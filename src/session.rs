@@ -19,13 +19,13 @@ pub struct Session<SessionData, const COOKIE_LENGTH: usize = 32> {
 
 #[derive(Debug, Clone)]
 pub(crate) enum SessionState<SessionData> {
-    /// The session was newly generated for this request, and not yet written to.
+    /// The session was newly generated for this request, and at most the expiry was written to.
     /// In this state, the session does not necessarily need to be communicated to the client.
     NewUnchanged {
         expiry: SessionExpiry,
         data: SessionData,
     },
-    /// The session was newly generated for this request, and was written to.
+    /// The session was newly generated for this request, and the data was written to.
     /// In this state, the session must be communicated to the client.
     NewChanged {
         expiry: SessionExpiry,
@@ -33,7 +33,6 @@ pub(crate) enum SessionState<SessionData> {
     },
     /// The session was loaded from the session store, and was not changed.
     Unchanged {
-        previous_id: Option<SessionId>,
         current_id: SessionId,
         expiry: SessionExpiry,
         data: SessionData,
@@ -41,16 +40,12 @@ pub(crate) enum SessionState<SessionData> {
     /// The session was loaded from the session store, and was changed.
     /// Either the expiry datetime or the data have changed.
     Changed {
-        deletable_id: Option<SessionId>,
-        previous_id: SessionId,
+        current_id: SessionId,
         expiry: SessionExpiry,
         data: SessionData,
     },
     /// The session was marked for deletion.
-    Deleted {
-        current_id: SessionId,
-        previous_id: Option<SessionId>,
-    },
+    Deleted { current_id: SessionId },
     /// The session was marked for deletion before it was ever communicated to database or client.
     NewDeleted,
     /// Used internally to avoid unsafe code when replacing the session state through a mutable reference.
@@ -134,12 +129,11 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     /// The session state will be `Unchanged`.
     pub fn new_from_session_store(
         current_id: SessionId,
-        previous_id: Option<SessionId>,
         expiry: SessionExpiry,
         data: SessionData,
     ) -> Self {
         Self {
-            state: SessionState::new_from_session_store(current_id, previous_id, expiry, data),
+            state: SessionState::new_from_session_store(current_id, expiry, data),
         }
     }
 
@@ -364,13 +358,11 @@ impl<SessionData> SessionState<SessionData> {
 
     fn new_from_session_store(
         current_id: SessionId,
-        previous_id: Option<SessionId>,
         expiry: SessionExpiry,
         data: SessionData,
     ) -> Self {
         Self::Unchanged {
             current_id,
-            previous_id,
             expiry,
             data,
         }
@@ -455,10 +447,9 @@ impl<SessionData: Debug> SessionState<SessionData> {
     fn change_expiry(&mut self) {
         match self {
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, previous_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged { current_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
                 *self = Self::Changed {
-                    previous_id: current_id,
-                    deletable_id: previous_id,
+                    current_id,
                     expiry,
                     data,
                 };
@@ -480,10 +471,9 @@ impl<SessionData: Debug> SessionState<SessionData> {
                 *self = Self::NewChanged { expiry, data };
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, previous_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged { current_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
                 *self = Self::Changed {
-                    previous_id: current_id,
-                    deletable_id: previous_id,
+                    current_id,
                     expiry,
                     data,
                 };
@@ -502,18 +492,12 @@ impl<SessionData: Debug> SessionState<SessionData> {
                 *self = Self::NewDeleted;
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, previous_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
-                *self = Self::Deleted {
-                    current_id,
-                    previous_id,
-                };
+                let Self::Unchanged { current_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
+                *self = Self::Deleted { current_id };
             }
             Self::Changed { .. } => {
-                let Self::Changed { previous_id, deletable_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
-                *self = Self::Deleted {
-                    current_id: previous_id,
-                    previous_id: deletable_id,
-                };
+                let Self::Changed {  current_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
+                *self = Self::Deleted { current_id };
             }
             Self::Deleted { .. } | Self::NewDeleted => {
                 panic!("Attempted to purge a purged session {self:?}")
