@@ -44,7 +44,7 @@ look at some of these issues:
 - [Issues labeled "good first issue"][good-first-issue]
 - [Issues labeled "help wanted"][help-wanted]
 
-Any contribution you intentionally submit for inclusion in the work, shall be licensed under the [BSD-2-Clause](https://opensource.org/license/bsd-2-clause/) license.
+Any contribution you intentionally submit for inclusion in the work shall be licensed under the [BSD-2-Clause](https://opensource.org/license/bsd-2-clause/) license.
 
 [contributing]: https://github.com/http-rs/typed-session/blob/main/.github/CONTRIBUTING.md
 [good-first-issue]: https://github.com/http-rs/typed-session/labels/good%20first%20issue
