@@ -69,6 +69,10 @@
 //! session store gets compromised.
 //!
 //! This crate updates the session id whenever the session data has changed or the session is expired.
+//! The session id update must be supported by the session store backend in a way that does not allow
+//! session branching, i.e. the creation of two different sessions through the simultaneous update of
+//! a single session.
+//! See [`SessionStoreConnector::update_session`] for more details.
 //!
 //! ## Example
 //!
