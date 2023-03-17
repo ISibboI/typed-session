@@ -121,8 +121,8 @@
 )]
 
 pub use anyhow::Error;
-/// An anyhow::Result with default return type of ()
-pub type Result<T = ()> = std::result::Result<T, Error>;
+/// An [`anyhow::Result`] with default return type of `()`.
+pub type Result<T = ()> = anyhow::Result<T>;
 
 #[cfg(feature = "memory-store")]
 mod memory_store;
