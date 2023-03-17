@@ -61,12 +61,14 @@
 //! That is, `64` bits of actual entropy, where a good PRNG is assumed to produce `0.5` bits of entropy per bit.
 //! The random source used by default is [`rand::rngs::ThreadRng`], from the [rand] crate, which is secure.
 //!
-//! Session data is stored only in the session store, the client only stores the unhashed session id.
-//! The session store only stores the hashed session id.
+//! Session data is stored only in the session store along with a hashed session id, while the client
+//! only stores the unhashed session id.
 //!
 //! Note that the OWASP® Foundation does not require session ids to be hashed. We anyways use the
 //! fast and secure hash function provided by crate [blake3] for additional security in case the
 //! session store gets compromised.
+//!
+//! This crate updates the session id whenever the session data has changed or the session is expired.
 //!
 //! ## Example
 //!
