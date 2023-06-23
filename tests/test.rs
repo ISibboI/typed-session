@@ -8,7 +8,7 @@ use typed_session::{
 /// If a new session is created but never mutated, then no cookie is set and the session is not stored in the session store.
 #[async_std::test]
 async fn test_dont_store_default_session() {
-    let store: SessionStore<(), _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<(), _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -27,7 +27,7 @@ async fn test_dont_store_default_session() {
 /// If a new session is created but only its expiry is mutated and not its data, then no cookie is set and the session is not stored in the session store.
 #[async_std::test]
 async fn test_dont_store_default_session_with_expiry_change() {
-    let store: SessionStore<(), _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<(), _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -48,10 +48,10 @@ async fn test_dont_store_default_session_with_expiry_change() {
 /// If a new session is created and mutated, then a cookie is set and the session is stored in the session store.
 #[async_std::test]
 async fn test_store_updated_default_session() {
-    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
-    let store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -86,10 +86,10 @@ async fn test_store_updated_default_session() {
 /// If a session is loaded from the store and stored without change, then the cookie is not updated and the session is not updated in the session store.
 #[async_std::test]
 async fn test_dont_update_unchanged_session() {
-    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
-    let store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -121,10 +121,10 @@ async fn test_dont_update_unchanged_session() {
 /// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
 #[async_std::test]
 async fn test_update_changed_session() {
-    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
-    let store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -167,9 +167,9 @@ async fn test_update_changed_session() {
 /// If a session is deleted, then the cookie is deleted and the session is deleted from the session store.
 #[async_std::test]
 async fn test_delete_deleted_session() {
-    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
-    let store: SessionStore<i32, _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
@@ -206,11 +206,11 @@ async fn test_delete_deleted_session() {
 /// If a session is changed, the old session id becomes invalid.
 #[async_std::test]
 async fn test_prevent_using_old_session_id() {
-    let cookie_generator = DebugSessionCookieGenerator::<32>::default();
+    let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
     // true represents being logged in
-    let store: SessionStore<bool, _, 32, _> = SessionStore::new_with_cookie_generator(
+    let store: SessionStore<bool, _, _> = SessionStore::new_with_cookie_generator(
         MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
