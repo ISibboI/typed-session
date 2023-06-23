@@ -114,7 +114,7 @@
 //! can be used as session data type.
 
 #![forbid(unsafe_code)]
-#![deny(
+#![warn(
     future_incompatible,
     missing_debug_implementations,
     nonstandard_style,
