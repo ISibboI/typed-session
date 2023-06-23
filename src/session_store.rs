@@ -25,7 +25,7 @@ pub struct SessionStore<
 > {
     implementation: SessionStoreConnection,
     cookie_generator: CookieGenerator,
-    expiry_strategy: SessionRenewalStrategy,
+    session_renewal_strategy: SessionRenewalStrategy,
     data: PhantomData<SessionData>,
 }
 
@@ -67,7 +67,7 @@ impl<SessionData, SessionStoreConnection>
         Self {
             implementation,
             cookie_generator: Default::default(),
-            expiry_strategy,
+            session_renewal_strategy: expiry_strategy,
             data: Default::default(),
         }
     }
@@ -80,14 +80,24 @@ impl<SessionData, SessionStoreConnection, CookieGenerator>
     pub fn new_with_cookie_generator(
         implementation: SessionStoreConnection,
         cookie_generator: CookieGenerator,
-        expiry_strategy: SessionRenewalStrategy,
+        session_renewal_strategy: SessionRenewalStrategy,
     ) -> Self {
         Self {
             implementation,
             cookie_generator,
-            expiry_strategy,
+            session_renewal_strategy,
             data: Default::default(),
         }
+    }
+
+    /// A reference to the session renewal strategy of this session store.
+    pub fn session_renewal_strategy(&self) -> &SessionRenewalStrategy {
+        &self.session_renewal_strategy
+    }
+
+    /// A mutable reference to the session renewal strategy of this session store.
+    pub fn session_renewal_strategy_mut(&mut self) -> &mut SessionRenewalStrategy {
+        &mut self.session_renewal_strategy
     }
 }
 
@@ -214,7 +224,7 @@ impl<
                 return Ok(None);
             }
 
-            match &self.expiry_strategy {
+            match &self.session_renewal_strategy {
                 SessionRenewalStrategy::Ignore => {}
                 SessionRenewalStrategy::AutomaticRenewal {
                     time_to_live,
@@ -248,7 +258,7 @@ impl<SessionData, SessionStoreConnection: Clone, CookieGenerator: Clone> Clone
         Self {
             implementation: self.implementation.clone(),
             cookie_generator: self.cookie_generator.clone(),
-            expiry_strategy: self.expiry_strategy,
+            session_renewal_strategy: self.session_renewal_strategy,
             data: self.data,
         }
     }
