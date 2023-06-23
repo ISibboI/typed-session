@@ -256,3 +256,19 @@ async fn test_prevent_using_old_session_id() {
         ]
     );
 }
+
+/// Ensure that creating a session store with default parameters results in long enough session tokens..
+#[async_std::test]
+async fn test_default_cookie_length() {
+    let session_store: SessionStore<bool, _, _> =
+        SessionStore::new(MemoryStore::new(), SessionRenewalStrategy::Ignore);
+    let mut session = Session::new();
+    *session.data_mut() = true;
+    if let SessionCookieCommand::Set { cookie_value, .. } =
+        session_store.store_session(session).await.unwrap()
+    {
+        assert!(cookie_value.len() >= 32);
+    } else {
+        panic!("Unexpected session cookie command.");
+    }
+}
