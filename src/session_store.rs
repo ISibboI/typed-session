@@ -16,16 +16,12 @@ pub(crate) mod cookie_generator;
 ///
 /// `SessionData` is the data associated with a session.
 /// `SessionStoreConnection` is the connection to the backend session store.
-/// `COOKIE_LENGTH` is the length of the session cookie, in characters.
-/// The default choice is 32, which is secure.
-/// It should be a multiple of 32, which is the block size of blake3.
 /// `CookieGenerator` is the type used to generate random session cookies.
 #[derive(Debug)]
 pub struct SessionStore<
     SessionData,
     SessionStoreConnection,
-    const COOKIE_LENGTH: usize = 32,
-    CookieGenerator = DefaultSessionCookieGenerator<COOKIE_LENGTH>,
+    CookieGenerator = DefaultSessionCookieGenerator,
 > {
     implementation: SessionStoreConnection,
     cookie_generator: CookieGenerator,
@@ -51,8 +47,8 @@ pub enum SessionRenewalStrategy {
     },
 }
 
-impl<SessionData, SessionStoreConnection, CookieGenerator, const COOKIE_LENGTH: usize>
-    SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection, CookieGenerator>
+    SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     /// Consume the `SessionStore` and return the wrapped `SessionStoreConnection`.
     pub fn into_inner(self) -> SessionStoreConnection {
@@ -60,13 +56,8 @@ impl<SessionData, SessionStoreConnection, CookieGenerator, const COOKIE_LENGTH: 
     }
 }
 
-impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize>
-    SessionStore<
-        SessionData,
-        SessionStoreConnection,
-        COOKIE_LENGTH,
-        DefaultSessionCookieGenerator<COOKIE_LENGTH>,
-    >
+impl<SessionData, SessionStoreConnection>
+    SessionStore<SessionData, SessionStoreConnection, DefaultSessionCookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new(
@@ -82,8 +73,8 @@ impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize>
     }
 }
 
-impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize, CookieGenerator>
-    SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection, CookieGenerator>
+    SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new_with_cookie_generator(
@@ -103,9 +94,8 @@ impl<SessionData, SessionStoreConnection, const COOKIE_LENGTH: usize, CookieGene
 impl<
         SessionData,
         SessionStoreConnection: SessionStoreConnector<SessionData>,
-        const COOKIE_LENGTH: usize,
-        CookieGenerator: SessionCookieGenerator<COOKIE_LENGTH>,
-    > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+        CookieGenerator: SessionCookieGenerator,
+    > SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     /// Store a session in the storage backend.
     /// If the session is marked for deletion, this method deletes the session.
@@ -201,9 +191,8 @@ impl<
 impl<
         SessionData: Debug,
         SessionStoreConnection: SessionStoreConnector<SessionData>,
-        const COOKIE_LENGTH: usize,
         CookieGenerator,
-    > SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+    > SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     /// Get a session from the storage backend.
     ///
@@ -252,12 +241,8 @@ impl<
     }
 }
 
-impl<
-        SessionData,
-        SessionStoreConnection: Clone,
-        const COOKIE_LENGTH: usize,
-        CookieGenerator: Clone,
-    > Clone for SessionStore<SessionData, SessionStoreConnection, COOKIE_LENGTH, CookieGenerator>
+impl<SessionData, SessionStoreConnection: Clone, CookieGenerator: Clone> Clone
+    for SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
