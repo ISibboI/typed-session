@@ -257,7 +257,7 @@ async fn test_prevent_using_old_session_id() {
     );
 }
 
-/// Ensure that creating a session store with default parameters results in long enough session tokens..
+/// Ensure that creating a session store with default parameters results in long enough session tokens.
 #[async_std::test]
 async fn test_default_cookie_length() {
     let session_store: SessionStore<bool, _, _> =
@@ -268,6 +268,61 @@ async fn test_default_cookie_length() {
         session_store.store_session(session).await.unwrap()
     {
         assert!(cookie_value.len() >= 32);
+    } else {
+        panic!("Unexpected session cookie command.");
+    }
+}
+
+/// Ensure that the expiry of sessions that expire automatically is set correctly.
+#[async_std::test]
+async fn test_automatic_session_expiry() {
+    let ttl = Duration::hours(24);
+    let mut session_store: SessionStore<bool, _, _> = SessionStore::new(
+        MemoryStore::new(),
+        SessionRenewalStrategy::AutomaticRenewal {
+            time_to_live: ttl,
+            maximum_remaining_time_to_live_for_renewal: Duration::hours(12),
+        },
+    );
+    let mut session = Session::new();
+    *session.data_mut() = true;
+
+    let now = Utc::now();
+    let now_lower = now - Duration::minutes(1);
+    let now_upper = now + Duration::minutes(1);
+
+    if let SessionCookieCommand::Set { expiry, .. } =
+        session_store.store_session(session).await.unwrap()
+    {
+        if let SessionExpiry::DateTime(expiry) = expiry {
+            assert!(expiry >= now_lower + ttl && expiry <= now_upper + ttl);
+        } else {
+            panic!("Expiry not set");
+        }
+    } else {
+        panic!("Unexpected session cookie command.");
+    }
+
+    let ttl = Duration::hours(12);
+    *session_store.session_renewal_strategy_mut() = SessionRenewalStrategy::AutomaticRenewal {
+        time_to_live: ttl,
+        maximum_remaining_time_to_live_for_renewal: Duration::hours(6),
+    };
+    let mut session = Session::new();
+    *session.data_mut() = true;
+
+    let now = Utc::now();
+    let now_lower = now - Duration::minutes(1);
+    let now_upper = now + Duration::minutes(1);
+
+    if let SessionCookieCommand::Set { expiry, .. } =
+        session_store.store_session(session).await.unwrap()
+    {
+        if let SessionExpiry::DateTime(expiry) = expiry {
+            assert!(expiry >= now_lower + ttl && expiry <= now_upper + ttl);
+        } else {
+            panic!("Expiry not set");
+        }
     } else {
         panic!("Unexpected session cookie command.");
     }

@@ -3,8 +3,8 @@ use crate::session_store::cookie_generator::SessionCookieGenerator;
 use crate::{DefaultSessionCookieGenerator, Result, Session, SessionExpiry};
 use anyhow::Error;
 use async_trait::async_trait;
-use chrono::Duration;
 use chrono::Utc;
+use chrono::{DateTime, Duration};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -102,7 +102,7 @@ impl<SessionData, SessionStoreConnection, CookieGenerator>
 }
 
 impl<
-        SessionData,
+        SessionData: Debug,
         SessionStoreConnection: SessionStoreConnector<SessionData>,
         CookieGenerator: SessionCookieGenerator,
     > SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
@@ -114,7 +114,7 @@ impl<
     /// then a [SessionCookieCommand] is returned.
     pub async fn store_session(
         &self,
-        session: Session<SessionData>,
+        mut session: Session<SessionData>,
     ) -> Result<SessionCookieCommand> {
         if matches!(
             &session.state,
@@ -122,6 +122,14 @@ impl<
                 | SessionState::Changed { .. }
                 | SessionState::Deleted { .. }
         ) {
+            // If we store a new session, we need to update its expiry.
+            // In all other cases, the expiry is updated when loading the session.
+            // This allows the user to see the current session expiry by inspecting the session.
+            if matches!(&session.state, SessionState::NewChanged { .. }) {
+                self.session_renewal_strategy
+                    .apply_to_session(&mut session, Utc::now());
+            }
+
             if let Some(maximum_retries_on_collision) =
                 self.implementation.maximum_retries_on_id_collision()
             {
@@ -224,25 +232,8 @@ impl<
                 return Ok(None);
             }
 
-            match &self.session_renewal_strategy {
-                SessionRenewalStrategy::Ignore => {}
-                SessionRenewalStrategy::AutomaticRenewal {
-                    time_to_live,
-                    maximum_remaining_time_to_live_for_renewal,
-                } => {
-                    let new_expiry = now + *time_to_live;
-                    match *session.expiry() {
-                        SessionExpiry::DateTime(old_expiry) => {
-                            // Renew only if within maximum remaining time.
-                            if old_expiry - now <= *maximum_remaining_time_to_live_for_renewal {
-                                session.set_expiry(new_expiry);
-                            }
-                        }
-                        // Always renew if the expiry is set to never, otherwise the session will never expire.
-                        SessionExpiry::Never => session.set_expiry(new_expiry),
-                    }
-                }
-            }
+            self.session_renewal_strategy
+                .apply_to_session(&mut session, now);
 
             Ok(Some(session))
         } else {
@@ -358,4 +349,32 @@ pub enum SessionCookieCommand {
     /// Do not inform the client about any updates to the session cookie.
     /// This means that the cookie stayed the same.
     DoNothing,
+}
+
+impl SessionRenewalStrategy {
+    fn apply_to_session<SessionData: Debug>(
+        &self,
+        session: &mut Session<SessionData>,
+        now: DateTime<Utc>,
+    ) {
+        match self {
+            SessionRenewalStrategy::Ignore => { /* do nothing */ }
+            SessionRenewalStrategy::AutomaticRenewal {
+                time_to_live,
+                maximum_remaining_time_to_live_for_renewal,
+            } => {
+                let new_expiry = now + *time_to_live;
+                match *session.expiry() {
+                    SessionExpiry::DateTime(old_expiry) => {
+                        // Renew only if within maximum remaining time.
+                        if old_expiry - now <= *maximum_remaining_time_to_live_for_renewal {
+                            session.set_expiry(new_expiry);
+                        }
+                    }
+                    // Always renew if the expiry is set to never, otherwise the session will never expire.
+                    SessionExpiry::Never => session.set_expiry(new_expiry),
+                }
+            }
+        }
+    }
 }
