@@ -152,6 +152,42 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     pub fn is_deleted(&self) -> bool {
         self.state.is_deleted()
     }
+
+    /// Returns true if this session was changed since it was loaded from the session store.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use typed_session::Session;
+    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// let mut session: Session<()> = Session::new();
+    /// assert!(!session.is_changed());
+    /// session.data_mut();
+    /// assert!(session.is_changed());
+    /// # Ok(()) }) }
+    pub fn is_changed(&self) -> bool {
+        self.state.is_changed()
+    }
+
+    /// Returns true if this session was changed since it was loaded from the session store, or if it is marked for destruction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use typed_session::Session;
+    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// let mut session: Session<()> = Session::new();
+    /// assert!(!session.is_changed_or_deleted());
+    /// session.data_mut();
+    /// assert!(session.is_changed_or_deleted());
+    /// let mut session: Session<()> = Session::new();
+    /// assert!(!session.is_changed_or_deleted());
+    /// session.delete();
+    /// assert!(session.is_changed_or_deleted());
+    /// # Ok(()) }) }
+    pub fn is_changed_or_deleted(&self) -> bool {
+        self.state.is_changed_or_deleted()
+    }
 }
 
 impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
@@ -372,15 +408,22 @@ impl<SessionData> SessionState<SessionData> {
         matches!(self, Self::Deleted { .. } | Self::NewDeleted)
     }
 
+    fn is_changed(&self) -> bool {
+        matches!(self, Self::Changed { .. } | Self::NewChanged { .. })
+    }
+
+    fn is_changed_or_deleted(&self) -> bool {
+        self.is_changed() || self.is_deleted()
+    }
+
     fn into_data_expiry_pair(self) -> (Option<SessionData>, Option<SessionExpiry>) {
         match self {
             SessionState::NewUnchanged { data, expiry }
             | SessionState::NewChanged { data, expiry }
             | SessionState::Unchanged { data, expiry, .. }
             | SessionState::Changed { data, expiry, .. } => (Some(data), Some(expiry)),
-            SessionState::Deleted { .. } | SessionState::NewDeleted | SessionState::Invalid => {
-                (None, None)
-            }
+            SessionState::Deleted { .. } | SessionState::NewDeleted => (None, None),
+            SessionState::Invalid => unreachable!("Invalid state is used internally only"),
         }
     }
 }
