@@ -29,7 +29,7 @@ Typed-session has no dependency to any specific async runtime, and hence can be 
 We have designed and implemented the crate with security in mind.
 Our design fulfils the requirements stated in [The OWASP® Foundation](https://owasp.org)'s cheat sheet on [session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
 We additionally hash the session ids using the fast and secure hash function [blake3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3) before storing them.
-To mitigate exploitable bugs we use ``#![deny(unsafe_code)]`` to ensure everything is implemented in 100% safe Rust.
+To mitigate exploitable bugs we use ``#![forbid(unsafe_code)]`` to ensure everything is implemented in 100% safe Rust.
 
 For further details, refer to the [crate-level documentation](https://docs.rs/typed-session).
 
