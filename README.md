@@ -7,7 +7,7 @@
 API documentation: [docs.rs](https://docs.rs/typed-session)
 
 Use typed-session to outsource all the low-level details of session management, such as session **expiration** and automatic **renewal** as well as **change tracking** of session data.
-Typed-session was designed to live up to the [The OWASP® Foundation's](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) session **security** standards, with **efficiency** and **usability** in mind.
+Typed-session was designed to live up to the [OWASP® Foundation's](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) session **security** standards, with **efficiency** and **usability** in mind.
 With typed-session, you can take full advantage of Rust's type system to model your users' sessions.
 
 ## Compatibility
