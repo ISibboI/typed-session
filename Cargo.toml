@@ -18,7 +18,6 @@ memory-store = []
 [dependencies]
 async-trait = "0.1.57"
 rand = "0.8.5"
-anyhow = "1.0.65"
 blake3 = "1.3.1"
 tracing = "0.1.37"
 

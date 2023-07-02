@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use std::collections::BTreeSet;
 use typed_session::{
-    DebugSessionCookieGenerator, MemoryStore, Operation, Session, SessionCookieCommand,
+    DebugSessionCookieGenerator, Error, MemoryStore, Operation, Session, SessionCookieCommand,
     SessionCookieGenerator, SessionExpiry, SessionId, SessionRenewalStrategy, SessionStore,
 };
 
@@ -257,6 +257,76 @@ async fn test_prevent_using_old_session_id() {
     );
 }
 
+/// If a session is changed concurrently, then only the first modification is successful.
+#[async_std::test]
+async fn test_concurrent_modification() {
+    let cookie_generator = DebugSessionCookieGenerator::default();
+    let cookie_0 = cookie_generator.generate_cookie();
+    let cookie_1 = cookie_generator.generate_cookie();
+    let cookie_2 = cookie_generator.generate_cookie();
+    let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
+        MemoryStore::new_with_logger(),
+        DebugSessionCookieGenerator::default(),
+        SessionRenewalStrategy::Ignore,
+    );
+    let mut session = Session::new();
+    *session.data_mut() = 1;
+    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    assert_eq!(cookie_value, cookie_0);
+    let mut session1 = store.load_session(&cookie_value).await.unwrap().unwrap();
+    let mut session2 = store.load_session(&cookie_value).await.unwrap().unwrap();
+    assert_eq!(*session1.data(), 1);
+    assert_eq!(*session2.data(), 1);
+    *session1.data_mut() = 2;
+    *session2.data_mut() = 3;
+    assert_eq!(
+        store.store_session(session1).await.unwrap(),
+        SessionCookieCommand::Set {
+            cookie_value: cookie_1.clone(),
+            expiry: SessionExpiry::Never
+        }
+    );
+    assert!(matches!(
+        store.store_session(session2).await,
+        Err(Error::UpdatedSessionDoesNotExist)
+    ));
+
+    // Check if we can upgrade the old session.
+    assert!(store.load_session(&cookie_0).await.unwrap().is_none());
+
+    let actual = store.into_inner().into_logger().into_inner();
+    let actual = actual.as_slice();
+    let expected = &[
+        Operation::CreateSession {
+            id: SessionId::from_cookie_value(&cookie_0),
+            expiry: SessionExpiry::Never,
+            data: 1,
+        },
+        Operation::ReadSession {
+            id: SessionId::from_cookie_value(&cookie_0),
+        },
+        Operation::ReadSession {
+            id: SessionId::from_cookie_value(&cookie_0),
+        },
+        Operation::UpdateSession {
+            current_id: SessionId::from_cookie_value(&cookie_1),
+            previous_id: SessionId::from_cookie_value(&cookie_0),
+            expiry: SessionExpiry::Never,
+            data: 2,
+        },
+        Operation::UpdateSession {
+            current_id: SessionId::from_cookie_value(&cookie_2),
+            previous_id: SessionId::from_cookie_value(&cookie_0),
+            expiry: SessionExpiry::Never,
+            data: 3,
+        },
+        Operation::ReadSession {
+            id: SessionId::from_cookie_value(&cookie_0),
+        },
+    ];
+    assert_eq!(actual, expected, "{actual:#?}\n!=\n{expected:#?}",);
+}
+
 /// Ensure that creating a session store with default parameters results in long enough session tokens.
 #[async_std::test]
 async fn test_default_cookie_length() {
@@ -275,7 +345,7 @@ async fn test_default_cookie_length() {
 
 /// Ensure that the expiry of sessions that expire automatically is set correctly.
 #[async_std::test]
-async fn test_automatic_session_expiry() {
+async fn test_automatic_setting_of_session_expiry() {
     let ttl = Duration::hours(24);
     let mut session_store: SessionStore<bool, _, _> = SessionStore::new(
         MemoryStore::new(),

@@ -1,7 +1,6 @@
 use crate::session::{SessionId, SessionState};
 use crate::session_store::cookie_generator::SessionCookieGenerator;
-use crate::{DefaultSessionCookieGenerator, Result, Session, SessionExpiry};
-use anyhow::Error;
+use crate::{error::Result, DefaultSessionCookieGenerator, Error, Session, SessionExpiry};
 use async_trait::async_trait;
 use chrono::Utc;
 use chrono::{DateTime, Duration};
@@ -140,9 +139,7 @@ impl<
                     }
                 }
 
-                Err(Error::msg(
-                    "Reached the maximum number of tries when generating a session id",
-                ))
+                Err(Error::MaximumSessionIdGenerationTriesReached)
             } else {
                 loop {
                     match self.try_store_session(&session).await? {

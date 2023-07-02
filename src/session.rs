@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::mem;
 
 /// A session with a client.
@@ -66,7 +66,7 @@ pub enum SessionExpiry {
 pub type SessionIdType = [u8; blake3::OUT_LEN];
 
 /// A session id.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
 impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
@@ -566,5 +566,21 @@ impl SessionId {
 impl From<SessionId> for SessionIdType {
     fn from(id: SessionId) -> Self {
         *id.0
+    }
+}
+
+impl Debug for SessionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SessionId([")?;
+        let mut once = true;
+        for byte in self.0.iter() {
+            if once {
+                once = false;
+            } else {
+                write!(f, ", ")?;
+            }
+            write!(f, "{byte}")?;
+        }
+        write!(f, "])")
     }
 }

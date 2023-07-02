@@ -1,6 +1,5 @@
 use crate::session_store::WriteSessionResult;
-use crate::{Result, Session, SessionExpiry, SessionId, SessionStoreConnector};
-use anyhow::Error;
+use crate::{error::Result, Error, Session, SessionExpiry, SessionId, SessionStoreConnector};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -92,7 +91,7 @@ impl<
             store.session_map.insert(current_id.clone(), session_body);
             Ok(WriteSessionResult::Ok(()))
         } else {
-            Err(Error::msg("Tried to update a non-existing session"))
+            Err(Error::UpdatedSessionDoesNotExist)
         }
     }
 

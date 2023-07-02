@@ -124,15 +124,13 @@
     unused_qualifications
 )]
 
-pub use anyhow::Error;
-/// An [`anyhow::Result`] with default return type of `()`.
-pub type Result<T = ()> = anyhow::Result<T>;
-
+mod error;
 #[cfg(feature = "memory-store")]
 mod memory_store;
 mod session;
 mod session_store;
 
+pub use error::{Error, Result};
 #[cfg(feature = "memory-store")]
 pub use memory_store::{
     DefaultLogger, MemoryStore, MemoryStoreOperationLogger, NoLogger, Operation,
