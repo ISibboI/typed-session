@@ -79,9 +79,9 @@
 //! ```
 //! use typed_session::{Session, SessionStore, MemoryStore};
 //!
-//! # fn main() -> typed_session::Result {
+//! # use typed_session::{Error, SessionCookieCommand, SessionRenewalStrategy};
+//! # fn main() -> Result<(), Error<()>> {
 //! # use rand::thread_rng;
-//! # use typed_session::{SessionCookieCommand, SessionRenewalStrategy};
 //! # async_std::task::block_on(async {
 //! #
 //! // Init a new session store we can persist sessions to.
@@ -130,7 +130,7 @@ mod memory_store;
 mod session;
 mod session_store;
 
-pub use error::{Error, Result};
+pub use error::Error;
 #[cfg(feature = "memory-store")]
 pub use memory_store::{
     DefaultLogger, MemoryStore, MemoryStoreOperationLogger, NoLogger, Operation,

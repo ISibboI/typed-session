@@ -1,6 +1,6 @@
 use crate::session::{SessionId, SessionState};
 use crate::session_store::cookie_generator::SessionCookieGenerator;
-use crate::{error::Result, DefaultSessionCookieGenerator, Error, Session, SessionExpiry};
+use crate::{DefaultSessionCookieGenerator, Error, Session, SessionExpiry};
 use async_trait::async_trait;
 use chrono::Utc;
 use chrono::{DateTime, Duration};
@@ -114,7 +114,7 @@ impl<
     pub async fn store_session(
         &self,
         mut session: Session<SessionData>,
-    ) -> Result<SessionCookieCommand> {
+    ) -> Result<SessionCookieCommand, Error<SessionStoreConnection::Error>> {
         if matches!(
             &session.state,
             SessionState::NewChanged { .. }
@@ -156,7 +156,8 @@ impl<
     async fn try_store_session(
         &self,
         session: &Session<SessionData>,
-    ) -> Result<WriteSessionResult<SessionCookieCommand>> {
+    ) -> Result<WriteSessionResult<SessionCookieCommand>, Error<SessionStoreConnection::Error>>
+    {
         match &session.state {
             SessionState::NewChanged { expiry, data } => {
                 let cookie_value = self.cookie_generator.generate_cookie();
@@ -198,7 +199,7 @@ impl<
     }
 
     /// Empties the entire store, deleting all sessions.
-    pub async fn clear_store(&self) -> Result {
+    pub async fn clear_store(&self) -> Result<(), Error<SessionStoreConnection::Error>> {
         self.implementation.clear().await
     }
 }
@@ -218,7 +219,7 @@ impl<
     pub async fn load_session(
         &self,
         cookie_value: impl AsRef<str>,
-    ) -> Result<Option<Session<SessionData>>> {
+    ) -> Result<Option<Session<SessionData>>, Error<SessionStoreConnection::Error>> {
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
         if let Some(mut session) = self.implementation.read_session(&session_id).await? {
             let now = Utc::now();
@@ -267,7 +268,10 @@ impl<SessionData, SessionStoreConnection: Clone, CookieGenerator: Clone> Clone
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
 pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
-    /// Writing a session may fail if the id already exists.
+    /// The error type of this connector.
+    type Error: Debug;
+
+    /// Writing a session may fail if the session id already exists.
     /// This constant indicates how often the caller should retry with different randomly generated ids until it should give up.
     /// The value `None` indicates that the caller should never give up, possibly looping infinitely.
     fn maximum_retries_on_id_collision(&self) -> Option<u32>;
@@ -278,10 +282,13 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
         current_id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
-    ) -> Result<WriteSessionResult>;
+    ) -> Result<WriteSessionResult, Error<Self::Error>>;
 
     /// Read the session with the given `id`.
-    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>>;
+    async fn read_session(
+        &self,
+        id: &SessionId,
+    ) -> Result<Option<Session<SessionData>>, Error<Self::Error>>;
 
     /// Update a session with new ids, data and expiry.
     ///
@@ -291,7 +298,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     ///  3. Set `A.expiry = expiry` and `A.data = data`.
     ///
     /// **Security:** To avoid race conditions, this method must not allow concurrent updates of a session id.
-    /// It must never happen that by updating a session id `X` concurrently, there are suddenly two different session ids `Y` and `Z` stemming both from `X`.
+    /// It must never happen that by updating a session id `X` concurrently, there are suddenly two different session ids `Y` and `Z`, both stemming from `X`.
     /// Instead, one of the updates must fail.
     async fn update_session(
         &self,
@@ -299,13 +306,13 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
         previous_id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
-    ) -> Result<WriteSessionResult>;
+    ) -> Result<WriteSessionResult, Error<Self::Error>>;
 
     /// Delete the session with the given `id`.
-    async fn delete_session(&self, id: &SessionId) -> Result<()>;
+    async fn delete_session(&self, id: &SessionId) -> Result<(), Error<Self::Error>>;
 
     /// Delete all sessions in the store.
-    async fn clear(&self) -> Result<()>;
+    async fn clear(&self) -> Result<(), Error<Self::Error>>;
 }
 
 /// The result of writing a session, indicating if the session could be written, or if the id collided.

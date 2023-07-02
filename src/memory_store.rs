@@ -1,5 +1,5 @@
 use crate::session_store::WriteSessionResult;
-use crate::{error::Result, Error, Session, SessionExpiry, SessionId, SessionStoreConnector};
+use crate::{Error, Session, SessionExpiry, SessionId, SessionStoreConnector};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
@@ -36,6 +36,8 @@ impl<
         OperationLogger: Send + Sync + MemoryStoreOperationLogger<SessionData>,
     > SessionStoreConnector<SessionData> for MemoryStore<SessionData, OperationLogger>
 {
+    type Error = ();
+
     fn maximum_retries_on_id_collision(&self) -> Option<u32> {
         self.store.lock().unwrap().maximum_retries_on_id_collision
     }
@@ -45,7 +47,7 @@ impl<
         id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
-    ) -> Result<WriteSessionResult> {
+    ) -> Result<WriteSessionResult, Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_create_session(id, expiry, data);
 
@@ -60,7 +62,10 @@ impl<
         }
     }
 
-    async fn read_session(&self, id: &SessionId) -> Result<Option<Session<SessionData>>> {
+    async fn read_session(
+        &self,
+        id: &SessionId,
+    ) -> Result<Option<Session<SessionData>>, Error<Self::Error>> {
         let store = self.store.lock().unwrap();
         store.operation_logger.log_read_session(id);
 
@@ -75,7 +80,7 @@ impl<
         previous_id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
-    ) -> Result<WriteSessionResult> {
+    ) -> Result<WriteSessionResult, Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store
             .operation_logger
@@ -95,7 +100,7 @@ impl<
         }
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<()> {
+    async fn delete_session(&self, id: &SessionId) -> Result<(), Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_delete_session(id);
 
@@ -103,7 +108,7 @@ impl<
         Ok(())
     }
 
-    async fn clear(&self) -> Result<()> {
+    async fn clear(&self) -> Result<(), Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_clear();
         store.session_map.clear();
@@ -132,7 +137,7 @@ impl<SessionData, OperationLogger> MemoryStore<SessionData, OperationLogger> {
     }
 
     /// Deletes all expired sessions.
-    pub fn delete_expired_sessions(&mut self) -> Result {
+    pub fn delete_expired_sessions(&mut self) -> Result<(), Error<()>> {
         let mut store = self.store.lock().unwrap();
         tracing::trace!("Cleaning up memory store...");
         let now = Utc::now();

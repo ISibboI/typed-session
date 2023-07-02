@@ -89,7 +89,7 @@ impl<SessionData: Default, const COOKIE_LENGTH: usize> Session<SessionData, COOK
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let session: Session<i32> = Session::new();
     /// assert_eq!(&SessionExpiry::Never, session.expiry());
@@ -111,7 +111,7 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let session: Session<_> = Session::new_with_data(4);
     /// assert_eq!(&SessionExpiry::Never, session.expiry());
@@ -143,7 +143,7 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> Result<(), typed_session::Error<()>> { async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_deleted());
     /// session.delete();
@@ -159,7 +159,7 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> Result<(), typed_session::Error<()>> { async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_changed());
     /// session.data_mut();
@@ -175,7 +175,7 @@ impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # fn main() -> Result<(), typed_session::Error<()>> { async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_changed_or_deleted());
     /// session.data_mut();
@@ -197,7 +197,7 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use chrono::Utc;
     /// # use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
@@ -233,8 +233,8 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     /// # Example
     ///
     /// ```rust
-    /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { async_std::task::block_on(async {
+    /// # use typed_session::{Session, Error};
+    /// # fn main() -> Result<(), Error<()>> { async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert!(!session.is_deleted());
     /// session.delete();
@@ -256,7 +256,7 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert_eq!(&SessionExpiry::Never, session.expiry());
@@ -273,8 +273,8 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     /// # Example
     ///
     /// ```rust
-    /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use typed_session::SessionExpiry;
+    /// # use typed_session::{Session, Error};
+    /// # fn main() -> Result<(), Error<()>> { use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// assert_eq!(&SessionExpiry::Never, session.expiry());
@@ -294,7 +294,7 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     ///
     /// ```rust
     /// # use typed_session::Session;
-    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use chrono::Utc;
     /// # use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
@@ -316,7 +316,7 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     /// # use typed_session::Session;
     /// # use std::time::Duration;
     /// # use async_std::task;
-    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use chrono::Utc;
     /// # use typed_session::SessionExpiry;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
@@ -344,7 +344,7 @@ impl<SessionData: Debug, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE
     /// # use typed_session::Session;
     /// # use std::time::Duration;
     /// # use async_std::task;
-    /// # fn main() -> typed_session::Result { use chrono::Utc;
+    /// # fn main() -> Result<(), typed_session::Error<()>> { use chrono::Utc;
     /// # async_std::task::block_on(async {
     /// let mut session: Session<()> = Session::new();
     /// session.expire_in(Utc::now(), Duration::from_secs(123));

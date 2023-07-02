@@ -1,9 +1,5 @@
 use std::fmt::Debug;
 
-/// The default result type used by this crate.
-pub type Result<T = (), SessionStoreConnectorError = ()> =
-    std::result::Result<T, Error<SessionStoreConnectorError>>;
-
 /// All errors that can occur in this crate.
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
@@ -19,4 +15,12 @@ pub enum Error<SessionStoreConnectorError: Debug> {
 
     /// An error occurred in the session store connector.
     SessionStoreConnector(SessionStoreConnectorError),
+}
+
+impl<SessionStoreConnectorError: Debug> From<SessionStoreConnectorError>
+    for Error<SessionStoreConnectorError>
+{
+    fn from(error: SessionStoreConnectorError) -> Self {
+        Self::SessionStoreConnector(error)
+    }
 }

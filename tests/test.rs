@@ -286,10 +286,11 @@ async fn test_concurrent_modification() {
             expiry: SessionExpiry::Never
         }
     );
-    assert!(matches!(
-        store.store_session(session2).await,
-        Err(Error::UpdatedSessionDoesNotExist)
-    ));
+    let actual: Result<SessionCookieCommand, Error<()>> = store.store_session(session2).await;
+    assert!(
+        matches!(actual, Err(Error::UpdatedSessionDoesNotExist)),
+        "{actual:?}",
+    );
 
     // Check if we can upgrade the old session.
     assert!(store.load_session(&cookie_0).await.unwrap().is_none());
