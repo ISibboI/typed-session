@@ -61,7 +61,10 @@ async fn test_store_updated_default_session() {
     let SessionCookieCommand::Set {
         expiry: SessionExpiry::Never,
         cookie_value,
-    } = store.store_session(session).await.unwrap() else {panic! ()};
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let memory_store = store.into_inner();
     // Also check if memory store works correctly here. That is not the main thing we test, but why not.
@@ -96,7 +99,13 @@ async fn test_dont_update_unchanged_session() {
     );
     let mut session = Session::new();
     *session.data_mut() = 1;
-    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    let SessionCookieCommand::Set {
+        cookie_value,
+        expiry: SessionExpiry::Never,
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let session = store.load_session(cookie_value).await.unwrap().unwrap();
     assert_eq!(
@@ -131,7 +140,13 @@ async fn test_update_changed_session() {
     );
     let mut session = Session::new();
     *session.data_mut() = 1;
-    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    let SessionCookieCommand::Set {
+        cookie_value,
+        expiry: SessionExpiry::Never,
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
     assert_eq!(*session.data(), 1);
@@ -176,7 +191,13 @@ async fn test_delete_deleted_session() {
     );
     let mut session = Session::new();
     *session.data_mut() = 1;
-    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    let SessionCookieCommand::Set {
+        cookie_value,
+        expiry: SessionExpiry::Never,
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
     assert_eq!(*session.data(), 1);
@@ -217,7 +238,13 @@ async fn test_prevent_using_old_session_id() {
     );
     let mut session = Session::new();
     *session.data_mut() = false;
-    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    let SessionCookieCommand::Set {
+        cookie_value,
+        expiry: SessionExpiry::Never,
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
     assert!(!*session.data());
@@ -271,7 +298,13 @@ async fn test_concurrent_modification() {
     );
     let mut session = Session::new();
     *session.data_mut() = 1;
-    let SessionCookieCommand::Set {cookie_value, expiry: SessionExpiry::Never} = store.store_session(session).await.unwrap() else {panic!()};
+    let SessionCookieCommand::Set {
+        cookie_value,
+        expiry: SessionExpiry::Never,
+    } = store.store_session(session).await.unwrap()
+    else {
+        panic!()
+    };
     assert_eq!(cookie_value, cookie_0);
     let mut session1 = store.load_session(&cookie_value).await.unwrap().unwrap();
     let mut session2 = store.load_session(&cookie_value).await.unwrap().unwrap();

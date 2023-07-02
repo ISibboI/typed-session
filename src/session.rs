@@ -490,7 +490,14 @@ impl<SessionData: Debug> SessionState<SessionData> {
     fn change_expiry(&mut self) {
         match self {
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged {
+                    current_id,
+                    expiry,
+                    data,
+                } = mem::replace(self, Self::Invalid)
+                else {
+                    unreachable!()
+                };
                 *self = Self::Changed {
                     current_id,
                     expiry,
@@ -510,11 +517,20 @@ impl<SessionData: Debug> SessionState<SessionData> {
     fn change_data(&mut self) {
         match self {
             Self::NewUnchanged { .. } => {
-                let Self::NewUnchanged {  expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::NewUnchanged { expiry, data } = mem::replace(self, Self::Invalid) else {
+                    unreachable!()
+                };
                 *self = Self::NewChanged { expiry, data };
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, expiry, data } = mem::replace(self, Self::Invalid) else {unreachable!()};
+                let Self::Unchanged {
+                    current_id,
+                    expiry,
+                    data,
+                } = mem::replace(self, Self::Invalid)
+                else {
+                    unreachable!()
+                };
                 *self = Self::Changed {
                     current_id,
                     expiry,
@@ -535,11 +551,15 @@ impl<SessionData: Debug> SessionState<SessionData> {
                 *self = Self::NewDeleted;
             }
             Self::Unchanged { .. } => {
-                let Self::Unchanged { current_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
+                let Self::Unchanged { current_id, .. } = mem::replace(self, Self::Invalid) else {
+                    unreachable!()
+                };
                 *self = Self::Deleted { current_id };
             }
             Self::Changed { .. } => {
-                let Self::Changed {  current_id, .. } = mem::replace(self, Self::Invalid) else { unreachable!() };
+                let Self::Changed { current_id, .. } = mem::replace(self, Self::Invalid) else {
+                    unreachable!()
+                };
                 *self = Self::Deleted { current_id };
             }
             Self::Deleted { .. } | Self::NewDeleted => {
