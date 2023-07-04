@@ -13,6 +13,10 @@ pub(crate) mod cookie_generator;
 ///
 /// This is the "front-end" interface of the session store.
 ///
+/// Note that most of its methods require passing a connection to the storage backend,
+/// which is of type `SessionStoreConnection`.
+/// This is to allow the usage of e.g. an external connection pool without dependence on the session store.
+///
 /// `SessionData` is the data associated with a session.
 /// `SessionStoreConnection` is the connection to the backend session store.
 /// `CookieGenerator` is the type used to generate random session cookies.
@@ -49,7 +53,7 @@ pub enum SessionRenewalStrategy {
 impl<SessionData, SessionStoreConnection>
     SessionStore<SessionData, SessionStoreConnection, DefaultSessionCookieGenerator>
 {
-    /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
+    /// Create a new session store with the given cookie generator and session renewal strategy.
     pub fn new(expiry_strategy: SessionRenewalStrategy) -> Self {
         Self {
             cookie_generator: Default::default(),
@@ -63,7 +67,7 @@ impl<SessionData, SessionStoreConnection>
 impl<SessionData, SessionStoreConnection, CookieGenerator>
     SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
-    /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
+    /// Create a new session store with the given cookie generator and session renewal strategy.
     pub fn new_with_cookie_generator(
         cookie_generator: CookieGenerator,
         session_renewal_strategy: SessionRenewalStrategy,
@@ -246,18 +250,12 @@ impl<SessionData, SessionStoreConnection, CookieGenerator: Clone> Clone
 /// This is the backend-facing interface of the session store.
 /// It defines simple [CRUD]-methods on sessions.
 ///
-/// This type must be `Clone` and thread safe (i.e. `Send` and `Sync`).
-/// Different cloned implementations of this trait should not block each other, but should allow
-/// concurrent queries through the different instances.
-/// This is to allow the whole [`SessionStore`] to be cloned and used concurrently, e.g. by a
-/// parallel or at least concurrent server application.
-///
 /// Sessions are identified by a session id (`current_id`).
 /// The session store must ensure that there is never any overlap between the ids.
 ///
 /// [CRUD]: https://en.wikipedia.org/wiki/Create,_read,_update_and_delete
 #[async_trait]
-pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
+pub trait SessionStoreConnector<SessionData> {
     /// The error type of this connector.
     type Error: Debug;
 
@@ -306,7 +304,9 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
 }
 
 /// The result of writing a session, indicating if the session could be written, or if the id collided.
+/// Annotated with `#[must_use]`, because silently dropping this may cause sessions to be dropped silently.
 #[derive(Debug)]
+#[must_use]
 pub enum WriteSessionResult<OkData = ()> {
     /// The session could be written without id collision.
     Ok(OkData),
@@ -327,7 +327,8 @@ impl<OkData> WriteSessionResult<OkData> {
 }
 
 /// Indicates if the client's session cookie should be updated.
-/// Annotated with `#[must_use]`, because silently dropping this very likely indicates that the communication of the session to the client was forgotten about.
+/// Annotated with `#[must_use]`, because silently dropping this
+/// very likely indicates that the communication of the session to the client was forgotten about.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use]
 pub enum SessionCookieCommand {

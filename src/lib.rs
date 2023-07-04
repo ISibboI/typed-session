@@ -13,7 +13,8 @@
 //! to load and store sessions given an identifying string, typically the value of a cookie.
 //! The [`Session`] type has a type parameter `SessionData` that decides what session-specific
 //! data is stored in the database.
-//! The user on the front-end is responsible for communicating session cookies to the client by performing the [`SessionCookieCommand`] returned by [`SessionStore::store_session`].
+//! The user on the front-end is responsible for communicating session cookies to the client
+//! by performing the [`SessionCookieCommand`] returned by [`SessionStore::store_session`].
 //!
 //! On the "back-end" of this crate, the trait [`SessionStoreConnector`]
 //! expects a simple [*CRUD*](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)-based

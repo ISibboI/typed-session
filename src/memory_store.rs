@@ -12,6 +12,10 @@ use std::sync::{Arc, Mutex};
 /// This store stores sessions in memory, without any persistence. It is intended to be used for debugging purposes.
 /// Sessions are deleted only when calling [delete_session](MemoryStore::delete_session)
 /// or when they are expired and [delete_expired_sessions](MemoryStore::delete_expired_sessions) is called.
+///
+/// This store implements [`SessionStoreConnector`], i.e. it can be passed to the session store
+/// to perform session updates directly on it, instead of through a separate connection type.
+/// This is restrictive, but this type is intended for debugging purposes only.
 #[derive(Debug)]
 pub struct MemoryStore<SessionData, OperationLogger> {
     store: Arc<Mutex<MemoryStoreData<SessionData, OperationLogger>>>,
