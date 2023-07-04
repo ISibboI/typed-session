@@ -22,10 +22,10 @@ pub struct SessionStore<
     SessionStoreConnection,
     CookieGenerator = DefaultSessionCookieGenerator,
 > {
-    implementation: SessionStoreConnection,
     cookie_generator: CookieGenerator,
     session_renewal_strategy: SessionRenewalStrategy,
     data: PhantomData<SessionData>,
+    connection: PhantomData<SessionStoreConnection>,
 }
 
 /// The strategy to renew sessions.
@@ -46,28 +46,16 @@ pub enum SessionRenewalStrategy {
     },
 }
 
-impl<SessionData, SessionStoreConnection, CookieGenerator>
-    SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
-{
-    /// Consume the `SessionStore` and return the wrapped `SessionStoreConnection`.
-    pub fn into_inner(self) -> SessionStoreConnection {
-        self.implementation
-    }
-}
-
 impl<SessionData, SessionStoreConnection>
     SessionStore<SessionData, SessionStoreConnection, DefaultSessionCookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
-    pub fn new(
-        implementation: SessionStoreConnection,
-        expiry_strategy: SessionRenewalStrategy,
-    ) -> Self {
+    pub fn new(expiry_strategy: SessionRenewalStrategy) -> Self {
         Self {
-            implementation,
             cookie_generator: Default::default(),
             session_renewal_strategy: expiry_strategy,
             data: Default::default(),
+            connection: Default::default(),
         }
     }
 }
@@ -77,15 +65,14 @@ impl<SessionData, SessionStoreConnection, CookieGenerator>
 {
     /// Create a new session store with the given implementation, cookie generator and session renewal strategy.
     pub fn new_with_cookie_generator(
-        implementation: SessionStoreConnection,
         cookie_generator: CookieGenerator,
         session_renewal_strategy: SessionRenewalStrategy,
     ) -> Self {
         Self {
-            implementation,
             cookie_generator,
             session_renewal_strategy,
             data: Default::default(),
+            connection: Default::default(),
         }
     }
 
@@ -114,6 +101,7 @@ impl<
     pub async fn store_session(
         &self,
         mut session: Session<SessionData>,
+        connection: &mut SessionStoreConnection,
     ) -> Result<SessionCookieCommand, Error<SessionStoreConnection::Error>> {
         if matches!(
             &session.state,
@@ -129,11 +117,10 @@ impl<
                     .apply_to_session(&mut session, Utc::now());
             }
 
-            if let Some(maximum_retries_on_collision) =
-                self.implementation.maximum_retries_on_id_collision()
+            if let Some(maximum_retries_on_collision) = connection.maximum_retries_on_id_collision()
             {
                 for _ in 0..maximum_retries_on_collision {
-                    match self.try_store_session(&session).await? {
+                    match self.try_store_session(&session, connection).await? {
                         WriteSessionResult::Ok(command) => return Ok(command),
                         WriteSessionResult::SessionIdExists => { /* continue trying */ }
                     }
@@ -142,7 +129,7 @@ impl<
                 Err(Error::MaximumSessionIdGenerationTriesReached)
             } else {
                 loop {
-                    match self.try_store_session(&session).await? {
+                    match self.try_store_session(&session, connection).await? {
                         WriteSessionResult::Ok(command) => return Ok(command),
                         WriteSessionResult::SessionIdExists => { /* continue trying */ }
                     }
@@ -156,14 +143,14 @@ impl<
     async fn try_store_session(
         &self,
         session: &Session<SessionData>,
+        connection: &mut SessionStoreConnection,
     ) -> Result<WriteSessionResult<SessionCookieCommand>, Error<SessionStoreConnection::Error>>
     {
         match &session.state {
             SessionState::NewChanged { expiry, data } => {
                 let cookie_value = self.cookie_generator.generate_cookie();
                 let id = SessionId::from_cookie_value(&cookie_value);
-                Ok(self
-                    .implementation
+                Ok(connection
                     .create_session(&id, expiry, data)
                     .await?
                     .map(|()| SessionCookieCommand::Set {
@@ -178,8 +165,7 @@ impl<
             } => {
                 let cookie_value = self.cookie_generator.generate_cookie();
                 let current_id = SessionId::from_cookie_value(&cookie_value);
-                Ok(self
-                    .implementation
+                Ok(connection
                     .update_session(&current_id, previous_id, expiry, data)
                     .await?
                     .map(|()| SessionCookieCommand::Set {
@@ -188,7 +174,7 @@ impl<
                     }))
             }
             SessionState::Deleted { current_id } => {
-                self.implementation.delete_session(current_id).await?;
+                connection.delete_session(current_id).await?;
                 Ok(WriteSessionResult::Ok(SessionCookieCommand::Delete))
             }
             SessionState::NewUnchanged { .. }
@@ -199,8 +185,11 @@ impl<
     }
 
     /// Empties the entire store, deleting all sessions.
-    pub async fn clear_store(&self) -> Result<(), Error<SessionStoreConnection::Error>> {
-        self.implementation.clear().await
+    pub async fn clear_store(
+        &self,
+        connection: &mut SessionStoreConnection,
+    ) -> Result<(), Error<SessionStoreConnection::Error>> {
+        connection.clear().await
     }
 }
 
@@ -219,9 +208,10 @@ impl<
     pub async fn load_session(
         &self,
         cookie_value: impl AsRef<str>,
+        connection: &mut SessionStoreConnection,
     ) -> Result<Option<Session<SessionData>>, Error<SessionStoreConnection::Error>> {
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
-        if let Some(mut session) = self.implementation.read_session(&session_id).await? {
+        if let Some(mut session) = connection.read_session(&session_id).await? {
             let now = Utc::now();
             if session.is_expired(now) {
                 // We could delete expired sessions here, but that does not make sense:
@@ -240,15 +230,15 @@ impl<
     }
 }
 
-impl<SessionData, SessionStoreConnection: Clone, CookieGenerator: Clone> Clone
+impl<SessionData, SessionStoreConnection, CookieGenerator: Clone> Clone
     for SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
 {
     fn clone(&self) -> Self {
         Self {
-            implementation: self.implementation.clone(),
             cookie_generator: self.cookie_generator.clone(),
             session_renewal_strategy: self.session_renewal_strategy,
             data: self.data,
+            connection: self.connection,
         }
     }
 }
@@ -278,7 +268,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
 
     /// Create a session with the given `current_id`, `expiry` and `data`.
     async fn create_session(
-        &self,
+        &mut self,
         current_id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
@@ -286,7 +276,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
 
     /// Read the session with the given `id`.
     async fn read_session(
-        &self,
+        &mut self,
         id: &SessionId,
     ) -> Result<Option<Session<SessionData>>, Error<Self::Error>>;
 
@@ -301,7 +291,7 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     /// It must never happen that by updating a session id `X` concurrently, there are suddenly two different session ids `Y` and `Z`, both stemming from `X`.
     /// Instead, one of the updates must fail.
     async fn update_session(
-        &self,
+        &mut self,
         current_id: &SessionId,
         previous_id: &SessionId,
         expiry: &SessionExpiry,
@@ -309,10 +299,10 @@ pub trait SessionStoreConnector<SessionData>: Clone + Send + Sync {
     ) -> Result<WriteSessionResult, Error<Self::Error>>;
 
     /// Delete the session with the given `id`.
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Error<Self::Error>>;
+    async fn delete_session(&mut self, id: &SessionId) -> Result<(), Error<Self::Error>>;
 
     /// Delete all sessions in the store.
-    async fn clear(&self) -> Result<(), Error<Self::Error>>;
+    async fn clear(&mut self) -> Result<(), Error<Self::Error>>;
 }
 
 /// The result of writing a session, indicating if the session could be written, or if the id collided.

@@ -44,7 +44,7 @@ impl<
     }
 
     async fn create_session(
-        &self,
+        &mut self,
         id: &SessionId,
         expiry: &SessionExpiry,
         data: &SessionData,
@@ -64,7 +64,7 @@ impl<
     }
 
     async fn read_session(
-        &self,
+        &mut self,
         id: &SessionId,
     ) -> Result<Option<Session<SessionData>>, Error<Self::Error>> {
         let store = self.store.lock().unwrap();
@@ -76,7 +76,7 @@ impl<
     }
 
     async fn update_session(
-        &self,
+        &mut self,
         current_id: &SessionId,
         previous_id: &SessionId,
         expiry: &SessionExpiry,
@@ -101,7 +101,7 @@ impl<
         }
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Error<Self::Error>> {
+    async fn delete_session(&mut self, id: &SessionId) -> Result<(), Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_delete_session(id);
 
@@ -109,7 +109,7 @@ impl<
         Ok(())
     }
 
-    async fn clear(&self) -> Result<(), Error<Self::Error>> {
+    async fn clear(&mut self) -> Result<(), Error<Self::Error>> {
         let mut store = self.store.lock().unwrap();
         store.operation_logger.log_clear();
         store.session_map.clear();

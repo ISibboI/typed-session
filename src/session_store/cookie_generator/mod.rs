@@ -6,6 +6,9 @@ use tracing::warn;
 /// A type with the ability to generate cookies.
 /// If the generator needs some mutable state, then it has to be behind a mutex or similar.
 /// This is to allow handling concurrent requests with a single session store instance.
+///
+/// (If you think it would be better to have a exclusive access to the session store for each request,
+/// please feel free to open an issue :) )
 pub trait SessionCookieGenerator {
     /// The length of the session cookie, in characters.
     /// The default choice is `32`, which is secure.

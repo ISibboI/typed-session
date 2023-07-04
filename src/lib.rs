@@ -85,19 +85,26 @@
 //! use rand::thread_rng;
 //! # async_std::task::block_on(async {
 //! #
+//! // Initialise a new database connection.
+//! // This is used by the session store to load and store sessions.
+//! // In this example, we use the debug session store `MemoryStore` directly as a database connection,
+//! // but usually you would pass some type wrapping e.g. a connection to Postgres or Redis.
+//! let mut connection = MemoryStore::new();
+//!
 //! // Init a new session store we can persist sessions to.
-//! let mut store: SessionStore<_, _> = SessionStore::new(MemoryStore::new(), SessionRenewalStrategy::Ignore);
+//! let mut store = SessionStore::new(SessionRenewalStrategy::Ignore);
 //!
 //! // Create and store a new session.
 //! // The session can hold arbitrary data, but session stores are type safe,
 //! // i.e. all sessions must hold data of the same type.
 //! // Use e.g. an enum to distinguish session states like "anonymous" or "logged-in as user X".
 //! let session = Session::new_with_data(15);
-//! let SessionCookieCommand::Set { cookie_value, .. } = store.store_session(session).await? else {unreachable!("New sessions without expiry always set the cookie")};
+//! let SessionCookieCommand::Set { cookie_value, .. } = store.store_session(session, &mut connection)
+//!     .await? else { unreachable!("New sessions without expiry always set the cookie") };
 //! // The set_cookie_command contains the cookie value and the expiry to be sent to the client.
 //!
 //! // Retrieve the session using the cookie.
-//! let session = store.load_session(cookie_value).await?.unwrap();
+//! let session = store.load_session(cookie_value, &mut connection).await?.unwrap();
 //! assert_eq!(*session.data(), 15);
 //! #
 //! # Ok(()) }) }

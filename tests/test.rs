@@ -8,27 +8,24 @@ use typed_session::{
 /// If a new session is created but never mutated, then no cookie is set and the session is not stored in the session store.
 #[async_std::test]
 async fn test_dont_store_default_session() {
+    let mut connection = MemoryStore::new_with_logger();
     let store: SessionStore<(), _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
     let session = Session::new();
     matches!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::DoNothing
     );
-    assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
-        &[]
-    );
+    assert_eq!(connection.into_logger().into_inner().as_slice(), &[]);
 }
 
 /// If a new session is created but only its expiry is mutated and not its data, then no cookie is set and the session is not stored in the session store.
 #[async_std::test]
 async fn test_dont_store_default_session_with_expiry_change() {
+    let mut connection = MemoryStore::new_with_logger();
     let store: SessionStore<(), _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -36,23 +33,20 @@ async fn test_dont_store_default_session_with_expiry_change() {
     session.set_expiry(Utc::now() + Duration::days(1));
 
     matches!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::DoNothing
     );
-    assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
-        &[]
-    );
+    assert_eq!(connection.into_logger().into_inner().as_slice(), &[]);
 }
 
 /// If a new session is created and mutated, then a cookie is set and the session is stored in the session store.
 #[async_std::test]
 async fn test_store_updated_default_session() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
     let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -61,15 +55,14 @@ async fn test_store_updated_default_session() {
     let SessionCookieCommand::Set {
         expiry: SessionExpiry::Never,
         cookie_value,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let memory_store = store.into_inner();
     // Also check if memory store works correctly here. That is not the main thing we test, but why not.
     let mut data_expiry_pairs = BTreeSet::new();
-    memory_store.for_each(|session| {
+    connection.for_each(|session| {
         data_expiry_pairs.insert(session.into_data_expiry_pair());
     });
     assert_eq!(
@@ -77,7 +70,7 @@ async fn test_store_updated_default_session() {
         BTreeSet::from([(Some(1), Some(SessionExpiry::Never))])
     );
     assert_eq!(
-        memory_store.into_logger().into_inner().as_slice(),
+        connection.into_logger().into_inner().as_slice(),
         &[Operation::CreateSession {
             id: SessionId::from_cookie_value(&cookie_0),
             expiry: SessionExpiry::Never,
@@ -89,11 +82,11 @@ async fn test_store_updated_default_session() {
 /// If a session is loaded from the store and stored without change, then the cookie is not updated and the session is not updated in the session store.
 #[async_std::test]
 async fn test_dont_update_unchanged_session() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
 
     let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -102,18 +95,22 @@ async fn test_dont_update_unchanged_session() {
     let SessionCookieCommand::Set {
         cookie_value,
         expiry: SessionExpiry::Never,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let session = store.load_session(cookie_value).await.unwrap().unwrap();
+    let session = store
+        .load_session(cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::DoNothing
     );
     assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
+        connection.into_logger().into_inner().as_slice(),
         &[
             Operation::CreateSession {
                 id: SessionId::from_cookie_value(&cookie_0),
@@ -130,11 +127,11 @@ async fn test_dont_update_unchanged_session() {
 /// If a session is loaded from the store and stored with change, then the cookie is updated and the session is updated in the session store.
 #[async_std::test]
 async fn test_update_changed_session() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
     let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -143,23 +140,27 @@ async fn test_update_changed_session() {
     let SessionCookieCommand::Set {
         cookie_value,
         expiry: SessionExpiry::Never,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
+    let mut session = store
+        .load_session(cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(*session.data(), 1);
     *session.data_mut() = 2;
     assert_eq!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::Set {
             cookie_value: cookie_1.clone(),
             expiry: SessionExpiry::Never
         }
     );
     assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
+        connection.into_logger().into_inner().as_slice(),
         &[
             Operation::CreateSession {
                 id: SessionId::from_cookie_value(&cookie_0),
@@ -182,10 +183,10 @@ async fn test_update_changed_session() {
 /// If a session is deleted, then the cookie is deleted and the session is deleted from the session store.
 #[async_std::test]
 async fn test_delete_deleted_session() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -194,20 +195,24 @@ async fn test_delete_deleted_session() {
     let SessionCookieCommand::Set {
         cookie_value,
         expiry: SessionExpiry::Never,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
+    let mut session = store
+        .load_session(cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(*session.data(), 1);
     session.delete();
     assert_eq!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::Delete,
     );
     assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
+        connection.into_logger().into_inner().as_slice(),
         &[
             Operation::CreateSession {
                 id: SessionId::from_cookie_value(&cookie_0),
@@ -227,12 +232,12 @@ async fn test_delete_deleted_session() {
 /// If a session is changed, the old session id becomes invalid.
 #[async_std::test]
 async fn test_prevent_using_old_session_id() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
     // true represents being logged in
     let store: SessionStore<bool, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -241,16 +246,20 @@ async fn test_prevent_using_old_session_id() {
     let SessionCookieCommand::Set {
         cookie_value,
         expiry: SessionExpiry::Never,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let mut session = store.load_session(cookie_value).await.unwrap().unwrap();
+    let mut session = store
+        .load_session(cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!*session.data());
     *session.data_mut() = true;
     assert_eq!(
-        store.store_session(session).await.unwrap(),
+        store.store_session(session, &mut connection).await.unwrap(),
         SessionCookieCommand::Set {
             cookie_value: cookie_1.clone(),
             expiry: SessionExpiry::Never
@@ -258,10 +267,14 @@ async fn test_prevent_using_old_session_id() {
     );
 
     // Check if we can upgrade the old session.
-    assert!(store.load_session(&cookie_0).await.unwrap().is_none());
+    assert!(store
+        .load_session(&cookie_0, &mut connection)
+        .await
+        .unwrap()
+        .is_none());
 
     assert_eq!(
-        store.into_inner().into_logger().into_inner().as_slice(),
+        connection.into_logger().into_inner().as_slice(),
         &[
             Operation::CreateSession {
                 id: SessionId::from_cookie_value(&cookie_0),
@@ -287,12 +300,12 @@ async fn test_prevent_using_old_session_id() {
 /// If a session is changed concurrently, then only the first modification is successful.
 #[async_std::test]
 async fn test_concurrent_modification() {
+    let mut connection = MemoryStore::new_with_logger();
     let cookie_generator = DebugSessionCookieGenerator::default();
     let cookie_0 = cookie_generator.generate_cookie();
     let cookie_1 = cookie_generator.generate_cookie();
     let cookie_2 = cookie_generator.generate_cookie();
     let store: SessionStore<i32, _, _> = SessionStore::new_with_cookie_generator(
-        MemoryStore::new_with_logger(),
         DebugSessionCookieGenerator::default(),
         SessionRenewalStrategy::Ignore,
     );
@@ -301,34 +314,49 @@ async fn test_concurrent_modification() {
     let SessionCookieCommand::Set {
         cookie_value,
         expiry: SessionExpiry::Never,
-    } = store.store_session(session).await.unwrap()
+    } = store.store_session(session, &mut connection).await.unwrap()
     else {
         panic!()
     };
     assert_eq!(cookie_value, cookie_0);
-    let mut session1 = store.load_session(&cookie_value).await.unwrap().unwrap();
-    let mut session2 = store.load_session(&cookie_value).await.unwrap().unwrap();
+    let mut session1 = store
+        .load_session(&cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut session2 = store
+        .load_session(&cookie_value, &mut connection)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(*session1.data(), 1);
     assert_eq!(*session2.data(), 1);
     *session1.data_mut() = 2;
     *session2.data_mut() = 3;
     assert_eq!(
-        store.store_session(session1).await.unwrap(),
+        store
+            .store_session(session1, &mut connection)
+            .await
+            .unwrap(),
         SessionCookieCommand::Set {
             cookie_value: cookie_1.clone(),
             expiry: SessionExpiry::Never
         }
     );
-    let actual = store.store_session(session2).await;
+    let actual = store.store_session(session2, &mut connection).await;
     assert!(
         matches!(actual, Err(Error::UpdatedSessionDoesNotExist)),
         "{actual:?}",
     );
 
     // Check if we can upgrade the old session.
-    assert!(store.load_session(&cookie_0).await.unwrap().is_none());
+    assert!(store
+        .load_session(&cookie_0, &mut connection)
+        .await
+        .unwrap()
+        .is_none());
 
-    let actual = store.into_inner().into_logger().into_inner();
+    let actual = connection.into_logger().into_inner();
     let actual = actual.as_slice();
     let expected = &[
         Operation::CreateSession {
@@ -364,12 +392,14 @@ async fn test_concurrent_modification() {
 /// Ensure that creating a session store with default parameters results in long enough session tokens.
 #[async_std::test]
 async fn test_default_cookie_length() {
-    let session_store: SessionStore<bool, _, _> =
-        SessionStore::new(MemoryStore::new(), SessionRenewalStrategy::Ignore);
+    let mut connection = MemoryStore::new_with_logger();
+    let session_store: SessionStore<bool, _, _> = SessionStore::new(SessionRenewalStrategy::Ignore);
     let mut session = Session::new();
     *session.data_mut() = true;
-    if let SessionCookieCommand::Set { cookie_value, .. } =
-        session_store.store_session(session).await.unwrap()
+    if let SessionCookieCommand::Set { cookie_value, .. } = session_store
+        .store_session(session, &mut connection)
+        .await
+        .unwrap()
     {
         assert!(cookie_value.len() >= 32);
     } else {
@@ -380,14 +410,13 @@ async fn test_default_cookie_length() {
 /// Ensure that the expiry of sessions that expire automatically is set correctly.
 #[async_std::test]
 async fn test_automatic_setting_of_session_expiry() {
+    let mut connection = MemoryStore::new_with_logger();
     let ttl = Duration::hours(24);
-    let mut session_store: SessionStore<bool, _, _> = SessionStore::new(
-        MemoryStore::new(),
-        SessionRenewalStrategy::AutomaticRenewal {
+    let mut session_store: SessionStore<bool, _, _> =
+        SessionStore::new(SessionRenewalStrategy::AutomaticRenewal {
             time_to_live: ttl,
             maximum_remaining_time_to_live_for_renewal: Duration::hours(12),
-        },
-    );
+        });
     let mut session = Session::new();
     *session.data_mut() = true;
 
@@ -395,8 +424,10 @@ async fn test_automatic_setting_of_session_expiry() {
     let now_lower = now - Duration::minutes(1);
     let now_upper = now + Duration::minutes(1);
 
-    if let SessionCookieCommand::Set { expiry, .. } =
-        session_store.store_session(session).await.unwrap()
+    if let SessionCookieCommand::Set { expiry, .. } = session_store
+        .store_session(session, &mut connection)
+        .await
+        .unwrap()
     {
         if let SessionExpiry::DateTime(expiry) = expiry {
             assert!(expiry >= now_lower + ttl && expiry <= now_upper + ttl);
@@ -419,8 +450,10 @@ async fn test_automatic_setting_of_session_expiry() {
     let now_lower = now - Duration::minutes(1);
     let now_upper = now + Duration::minutes(1);
 
-    if let SessionCookieCommand::Set { expiry, .. } =
-        session_store.store_session(session).await.unwrap()
+    if let SessionCookieCommand::Set { expiry, .. } = session_store
+        .store_session(session, &mut connection)
+        .await
+        .unwrap()
     {
         if let SessionExpiry::DateTime(expiry) = expiry {
             assert!(expiry >= now_lower + ttl && expiry <= now_upper + ttl);
