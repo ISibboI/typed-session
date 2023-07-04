@@ -1,9 +1,9 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 
 /// All errors that can occur in this crate.
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
-pub enum Error<SessionStoreConnectorError: Debug> {
+pub enum Error<SessionStoreConnectorError> {
     /// A session was attempted to be updated, but the session does not exist.
     /// This may happen due to concurrent modification, and is forbidden to prevent data inconsistencies.
     /// If you receive this error, revert everything that you did while handling the request that
@@ -17,10 +17,25 @@ pub enum Error<SessionStoreConnectorError: Debug> {
     SessionStoreConnector(SessionStoreConnectorError),
 }
 
-impl<SessionStoreConnectorError: Debug> From<SessionStoreConnectorError>
+impl<SessionStoreConnectorError> From<SessionStoreConnectorError>
     for Error<SessionStoreConnectorError>
 {
     fn from(error: SessionStoreConnectorError) -> Self {
         Self::SessionStoreConnector(error)
     }
+}
+
+impl<SessionStoreConnectorError: Display> Display for Error<SessionStoreConnectorError> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::UpdatedSessionDoesNotExist => write!(f, "the updated session does not exist, which indicates that it was concurrently modified or deleted."),
+            Error::MaximumSessionIdGenerationTriesReached => write!(f, "tried to generate a new session id but generated only existing ids until the maximum retry limit was reached."),
+            Error::SessionStoreConnector(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl<SessionStoreConnectorError: Debug + Display> std::error::Error
+    for Error<SessionStoreConnectorError>
+{
 }
