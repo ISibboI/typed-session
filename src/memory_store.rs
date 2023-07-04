@@ -3,6 +3,7 @@ use crate::{Error, Session, SessionExpiry, SessionId, SessionStoreConnector};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
@@ -36,7 +37,7 @@ impl<
         OperationLogger: Send + Sync + MemoryStoreOperationLogger<SessionData>,
     > SessionStoreConnector<SessionData> for MemoryStore<SessionData, OperationLogger>
 {
-    type Error = ();
+    type Error = Infallible;
 
     fn maximum_retries_on_id_collision(&self) -> Option<u32> {
         self.store.lock().unwrap().maximum_retries_on_id_collision

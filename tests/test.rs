@@ -319,7 +319,7 @@ async fn test_concurrent_modification() {
             expiry: SessionExpiry::Never
         }
     );
-    let actual: Result<SessionCookieCommand, Error<()>> = store.store_session(session2).await;
+    let actual = store.store_session(session2).await;
     assert!(
         matches!(actual, Err(Error::UpdatedSessionDoesNotExist)),
         "{actual:?}",

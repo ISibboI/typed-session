@@ -80,8 +80,9 @@
 //! use typed_session::{Session, SessionStore, MemoryStore};
 //!
 //! # use typed_session::{Error, SessionCookieCommand, SessionRenewalStrategy};
-//! # fn main() -> Result<(), Error<()>> {
-//! # use rand::thread_rng;
+//! # use std::convert::Infallible;
+//! # fn main() -> Result<(), Error<Infallible>> {
+//! use rand::thread_rng;
 //! # async_std::task::block_on(async {
 //! #
 //! // Init a new session store we can persist sessions to.
