@@ -583,6 +583,12 @@ impl SessionId {
     }
 }
 
+impl AsRef<[u8]> for SessionId {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 impl From<SessionId> for SessionIdType {
     fn from(id: SessionId) -> Self {
         *id.0
