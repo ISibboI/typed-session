@@ -150,4 +150,5 @@ pub use session_store::{
         DebugSessionCookieGenerator, DefaultSessionCookieGenerator, SessionCookieGenerator,
     },
     SessionCookieCommand, SessionRenewalStrategy, SessionStore, SessionStoreConnector,
+    WriteSessionResult,
 };
