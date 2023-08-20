@@ -10,7 +10,7 @@ edition = "2021"
 keywords = ["async", "typed", "session", "middleware"]
 categories = ["web-programming"]
 authors = ["Sebastian Schmidt <isibboi@gmail.com>"]
-rust-version = "1.65.0"
+rust-version = "1.66.0"
 
 [features]
 memory-store = []
