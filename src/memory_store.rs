@@ -68,14 +68,15 @@ impl<
 
     async fn read_session(
         &mut self,
-        id: &SessionId,
+        id: SessionId,
     ) -> Result<Option<Session<SessionData>>, Error<Self::Error>> {
         let store = self.store.lock().unwrap();
-        store.operation_logger.log_read_session(id);
+        store.operation_logger.log_read_session(&id);
 
-        Ok(store.session_map.get(id).map(|body| {
-            Session::new_from_session_store(body.current_id.clone(), body.expiry, body.data.clone())
-        }))
+        Ok(store
+            .session_map
+            .get(&id)
+            .map(|body| Session::new_from_session_store(id, body.expiry, body.data.clone())))
     }
 
     async fn update_session(

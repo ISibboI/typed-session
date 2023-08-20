@@ -215,7 +215,7 @@ impl<
         connection: &mut SessionStoreConnection,
     ) -> Result<Option<Session<SessionData>>, Error<SessionStoreConnection::Error>> {
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
-        if let Some(mut session) = connection.read_session(&session_id).await? {
+        if let Some(mut session) = connection.read_session(session_id).await? {
             let now = Utc::now();
             if session.is_expired(now) {
                 // We could delete expired sessions here, but that does not make sense:
@@ -275,7 +275,7 @@ pub trait SessionStoreConnector<SessionData> {
     /// Read the session with the given `id`.
     async fn read_session(
         &mut self,
-        id: &SessionId,
+        id: SessionId,
     ) -> Result<Option<Session<SessionData>>, Error<Self::Error>>;
 
     /// Update a session with new ids, data and expiry.
