@@ -1,6 +1,6 @@
 [package]
 name = "typed-session"
-version = "0.7.2"
+version = "0.8.0"
 license = "BSD-2-Clause"
 repository = "https://github.com/ISibboI/typed-session"
 documentation = "https://docs.rs/typed-session"
