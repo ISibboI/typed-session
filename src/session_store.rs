@@ -195,14 +195,7 @@ impl<
     ) -> Result<(), Error<SessionStoreConnection::Error>> {
         connection.clear().await
     }
-}
 
-impl<
-        SessionData: Debug,
-        SessionStoreConnection: SessionStoreConnector<SessionData>,
-        CookieGenerator,
-    > SessionStore<SessionData, SessionStoreConnection, CookieGenerator>
-{
     /// Get a session from the storage backend.
     ///
     /// The `cookie_value` is the value of a cookie identifying the session.
@@ -214,6 +207,13 @@ impl<
         cookie_value: impl AsRef<str>,
         connection: &mut SessionStoreConnection,
     ) -> Result<Option<Session<SessionData>>, Error<SessionStoreConnection::Error>> {
+        if cookie_value.as_ref().as_bytes().len() != CookieGenerator::COOKIE_LENGTH {
+            return Err(Error::WrongCookieLength {
+                expected: CookieGenerator::COOKIE_LENGTH,
+                actual: cookie_value.as_ref().as_bytes().len(),
+            });
+        }
+
         let session_id = SessionId::from_cookie_value(cookie_value.as_ref());
         if let Some(mut session) = connection.read_session(session_id).await? {
             let now = Utc::now();
