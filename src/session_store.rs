@@ -130,7 +130,9 @@ impl<
                     }
                 }
 
-                Err(Error::MaximumSessionIdGenerationTriesReached)
+                Err(Error::MaximumSessionIdGenerationTriesReached {
+                    maximum: maximum_retries_on_collision,
+                })
             } else {
                 loop {
                     match self.try_store_session(&session, connection).await? {
