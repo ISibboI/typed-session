@@ -1,5 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
-use std::fmt::{Debug, Formatter};
+use secure_string::SecureArray;
+use std::fmt::Debug;
 use std::mem;
 
 /// A session with a client.
@@ -63,10 +64,10 @@ pub enum SessionExpiry {
 }
 
 /// The type of a session id.
-pub type SessionIdType = [u8; blake3::OUT_LEN];
+pub type SessionIdType = SecureArray<u8, { blake3::OUT_LEN }>;
 
 /// A session id.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionId(Box<SessionIdType>);
 
 impl<SessionData, const COOKIE_LENGTH: usize> Session<SessionData, COOKIE_LENGTH> {
@@ -579,34 +580,18 @@ impl SessionId {
         // We do the same, but instead of base64 encoding a binary ids, we use normal alphanumerical ids with a length multiple of the blake3 block size.
         // This gives less entropy, but still more than enough to be secure (see crate-level documentation).
         let hash = blake3::hash(cookie_value.as_bytes());
-        Self(Box::new(hash.into()))
+        Self(Box::new((<[u8; blake3::OUT_LEN]>::from(hash)).into()))
     }
 }
 
 impl AsRef<[u8]> for SessionId {
     fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+        self.0.as_ref().unsecure()
     }
 }
 
 impl From<SessionId> for SessionIdType {
     fn from(id: SessionId) -> Self {
         *id.0
-    }
-}
-
-impl Debug for SessionId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SessionId([")?;
-        let mut once = true;
-        for byte in self.0.iter() {
-            if once {
-                once = false;
-            } else {
-                write!(f, ", ")?;
-            }
-            write!(f, "{byte}")?;
-        }
-        write!(f, "])")
     }
 }
