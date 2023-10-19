@@ -20,7 +20,7 @@ async-trait = "0.1.74"
 rand = "0.8.5"
 blake3 = "1.5.0"
 tracing = "0.1.39"
-thiserror = "1.0.49"
+thiserror = "1.0.50"
 secure-string = "0.3.0"
 
 [dependencies.chrono]
