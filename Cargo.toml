@@ -16,7 +16,7 @@ rust-version = "1.66.0"
 memory-store = []
 
 [dependencies]
-async-trait = "0.1.74"
+async-trait = "0.1.76"
 rand = "0.8.5"
 blake3 = "1.5.0"
 tracing = "0.1.40"
